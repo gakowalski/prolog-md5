@@ -135,16 +135,16 @@ conv_bytes_to_hex_reverse([ H1, H2, H3, H4, H5, H6, H7, H8 | List ]) :-
 	put_char(C2),
 	!.
 
-
-
 run_tests :-
 	run_test(test_code_to_list),
+	run_test(test_char_to_dword),
 	run_test(test_conv_hex_to_dword),
 	run_test(test_conv_hex_to_dword_reverse),
 	run_test(test_md5_transform_list_f),
 	run_test(test_md5_transform_list_g),
 	run_test(test_md5_transform_list_h),
 	run_test(test_md5_transform_list_i),
+	run_test(test_md5_transform_states),
 	!.
 
 run_test(Test) :- print(Test), nl, call(Test), !.
@@ -175,39 +175,40 @@ md5(MsgStr, Digest) :-
 	md5_final(Context, Digest),
 	!.
 
-md5_init(
-    [ state0(S0),
-      state1(S1),
-      state2(S2),
-      state3(S3)
-    ]) :-
+md5_init([ S0, S1, S2, S3 ]) :-
 	conv_hex_to_dword( '67452301' , S0 ),
 	conv_hex_to_dword( 'efcdab89' , S1 ),
 	conv_hex_to_dword( '98badcfe' , S2 ),
 	conv_hex_to_dword( '10325476' , S3 ),
 	!.
 
-
-
-
 decode(MsgStr, ListDwords) :-
 	string_length(MsgStr, Length),
 	0 is Length mod 4,
 	decode(MsgStr, 0, Length, ListDwords).
 decode(_, Length, Length, []) :- !.
-decode(MsgStr, Start, Length, [ Substring | ListDwords ]) :-
+decode(MsgStr, Start, Length, [ Dword | ListDwords ]) :-
 	Start < Length,
 	sub_string(MsgStr, Start, 4, _, Substring),
+	char_to_dword(Substring, Dword),
 	NewStart is Start + 4,
 	decode(MsgStr, NewStart, Length, ListDwords).
 
 char_to_dword(String, Dword) :-
+	%string_length(String, Length),
+	%Length is 4,
 	string_to_list(String, [ C1, C2, C3, C4 ]),
 	code_to_list(C1, B1),
 	code_to_list(C2, B2),
 	code_to_list(C3, B3),
 	code_to_list(C4, B4),
-	append([B4, B3, B2, B1], Dword).
+	append([B4, B3, B2, B1], Dword),
+	!.
+
+test_decode :-
+	decode('TESTSTOP', [ X, Y ]),
+	conv_hex_to_dword('54534554', X),
+	char_to_dword('STOP', Y).
 
 test_char_to_dword :-
 	char_to_dword('TEST', X),
@@ -417,6 +418,55 @@ rol_list(C, Input, Output) :-
 	divide_list(C, Input, Left, Right),
 	append(Right, Left, Output),
 	!.
+
+md5_transform_states(States, BlockStr, NewStates) :-
+	decode(BlockStr, X),
+	md5_transform_states_decoded(States, X, NewStates)
+	.
+
+md5_transform_states_decoded(States, Dwords, NewStates) :-
+	md5_transform_states(1, States, Dwords, Result),
+	md5_add_states(States, Result, NewStates)
+	.
+
+md5_add_states([S1,S2,S3,S4], [T1,T2,T3,T4], [O1,O2,O3,O4]) :-
+	add_list(S1, T1, O1, _),
+	add_list(S2, T2, O2, _),
+	add_list(S3, T3, O3, _),
+	add_list(S4, T4, O4, _).
+
+md5_transform_states(65, States, _, States).
+md5_transform_states(Round, [ A, B, C, D ], X, NewStates) :-
+	md5_round_constant(Round, Trans, Rotation, AC, Index),
+	md5_rotate_constant(Rotation, RotValue),
+	nth0(Index, X, XValue),
+	conv_hex_to_dword(AC, DwordAC),
+	md5_transform_list(Trans, A, B, C, D, XValue, RotValue, DwordAC, Result),
+	NewRound is Round + 1,
+	md5_transform_states(NewRound, [ D, Result, B, C ], X, NewStates).
+
+test_md5_transform_states :-
+	md5_init(States),
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	conv_hex_to_dword('00000080', One), % terminator tekstu
+	conv_hex_to_dword('00000020', Two), % 32 bity slowa 'TEST'
+	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs],
+	%print('before transform'), nl, !,
+	md5_transform_states(1, States, DwordList, Result),
+	%md5_transform_states(1, States, DwordList, [ S0, S1, S2, S3 ]),
+	md5_add_states(States, Result, [ S0, S1, S2, S3 ]),
+	%print('after transform'), nl,
+	%conv_bytes_to_hex(S0),
+	%conv_bytes_to_hex(S1),
+	%conv_bytes_to_hex(S2),
+	%conv_bytes_to_hex(S3).
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+
+
 
 
 
