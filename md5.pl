@@ -145,6 +145,11 @@ run_tests :-
 	run_test(test_md5_transform_list_h),
 	run_test(test_md5_transform_list_i),
 	run_test(test_md5_transform_states),
+	run_test(test_buffer),
+	run_test(test_byte_copy),
+	run_test(test_decode_list),
+	run_test(test_md5_update),
+	run_test(test_md5_final),
 	!.
 
 run_test(Test) :- print(Test), nl, call(Test), !.
@@ -168,12 +173,125 @@ test_conv_hex_to_dword_reverse :-
 	conv_hex_to_dword_reverse('19BD0146', C).
 
 % glowna funkcja md5
+% parametry:
+% MsgStr - lista kodow znakowych, np. "Test"
+% Digest - Wynik
 md5(MsgStr, Digest) :-
-	string_length(MsgStr, MsgStrLen),
-	md5_init(Context),
-	md5_update(Context, MsgStr, MsgStrLen),
-	md5_final(Context, Digest),
+	decode_string_align(MsgStr, ByteList, Length),
+	md5_reverse_bytelist(ByteList, Reversed),
+	append(Reversed, BitList),
+	md5_init(States),
+	conv_hex_to_dword('00000000', Zs),
+	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
+	md5_update(States, NewStates, Buffer, NewBuffer, BitList, Length, 0, NewBitCount),
+	md5_final(NewStates, NewBuffer, NewBitCount, Digest),
 	!.
+
+exp_md5 :-
+	md5("TEST2", States),
+	print_digest(States).
+
+
+demo_md5 :-
+	print('Type text to be hashed: '),
+	current_input(Stream),
+	read_line_to_codes(Stream, Codes),
+	md5(Codes, Digest),
+	print('MD5 hash: '),
+	print_digest(Digest),
+	!.
+
+test_md5 :-
+	md5("TEST", [S0, S1, S2, S3]),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+	%print_digest(States).
+
+md5_reverse_bytelist([], []).
+md5_reverse_bytelist([ B0,B1,B2,B3 | ByteList], [ B3,B2,B1,B0 | Reversed ]) :-
+	md5_reverse_bytelist(ByteList, Reversed).
+
+
+md5_final(States, Buffer, BitCount, Digest) :-
+	code_to_list(0, Z),
+	conv_hex_to_dword('00000000', Zs),
+	conv_hex_to_dword('00000080', PaddingStart),
+	append([PaddingStart,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Padding),
+	HighBitCount is BitCount // 256,
+	LowBitCount is BitCount mod 256,
+	code_to_list(HighBitCount, HighByte),
+	code_to_list(LowBitCount, LowByte),
+	append([Z,Z,HighByte,LowByte, Z,Z,Z,Z], Bits),
+	Index is (BitCount // 8) mod 64,
+	md5_final_padlen(Index, PadLen),
+	md5_update(States, NewStates, Buffer, NewBuffer, Padding, PadLen, BitCount, NewBC),
+	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _).
+
+print_states([S0, S1, S2, S3]) :-
+	conv_bytes_to_hex(S0), nl,
+	conv_bytes_to_hex(S1), nl,
+	conv_bytes_to_hex(S2), nl,
+	conv_bytes_to_hex(S3), nl.
+
+print_digest([S0, S1, S2, S3]) :-
+	conv_bytes_to_hex_reverse(S0),
+	conv_bytes_to_hex_reverse(S1),
+	conv_bytes_to_hex_reverse(S2),
+	conv_bytes_to_hex_reverse(S3), nl.
+
+test_md5_final :-
+	md5_init(States),
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Test,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs], Buffer),
+	md5_final(States, Buffer, 32, [S0, S1, S2, S3]),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+	% dokonczyc test
+	%print_digest(Result).
+
+
+% (index < 56) ? (56 - index) : (120 - index);
+md5_final_padlen(Index, PadLen) :-
+	Index < 56,
+	PadLen is 56 - Index.
+md5_final_padlen(Index, PadLen) :-
+	Index >= 56,
+	PadLen is 120 - Index.
+
+% md5_update(
+%    States, NewStates,
+%    Buffer, NewBuffer,
+%    Input, InputLen,
+%    InCount0, OutCount0,
+%    InCount1, OutCount1).
+
+
+decode_string([], [], 0).
+decode_string([ Char | CharList ], [ Byte | ByteList ], Length) :-
+	code_to_list(Char, Byte),
+	decode_string(CharList, ByteList, TmpLength),
+	Length is TmpLength + 1.
+
+decode_string_align(CharList, ByteList, Length) :-
+	decode_string(CharList, BL, Length),
+	align_byte_list(BL, ByteList, Length).
+
+align_byte_list(ByteList, NewList, Length) :-
+	PaddingLen is (4 - Length mod 4) mod 4,
+	%NewLength is Length + PaddingLen,
+	align_byte_list_append(ByteList, NewList, PaddingLen).
+
+align_byte_list_append(BL, BL, 0) :- !.
+align_byte_list_append(BL, NL, PL) :-
+	code_to_list(0, Zs), % do optymalizacji
+	append(BL, [Zs], Tmp),
+	NewPadding is PL - 1,
+	align_byte_list_append(Tmp, NL, NewPadding).
 
 md5_init([ S0, S1, S2, S3 ]) :-
 	conv_hex_to_dword( '67452301' , S0 ),
@@ -182,17 +300,16 @@ md5_init([ S0, S1, S2, S3 ]) :-
 	conv_hex_to_dword( '10325476' , S3 ),
 	!.
 
-decode(MsgStr, ListDwords) :-
-	string_length(MsgStr, Length),
-	0 is Length mod 4,
-	decode(MsgStr, 0, Length, ListDwords).
-decode(_, Length, Length, []) :- !.
-decode(MsgStr, Start, Length, [ Dword | ListDwords ]) :-
-	Start < Length,
-	sub_string(MsgStr, Start, 4, _, Substring),
-	char_to_dword(Substring, Dword),
-	NewStart is Start + 4,
-	decode(MsgStr, NewStart, Length, ListDwords).
+decode_list([], []) :- !.
+decode_list(List, [ Dword | ListDwords ]) :-
+	divide_list(32, List, Dword, NewList),
+	decode_list(NewList, ListDwords).
+
+test_decode_list :-
+	conv_hex_to_dword('01010101', A),
+	conv_hex_to_dword('20202020', B),
+	append([A,B],Test),
+	decode_list(Test, [A,B]).
 
 char_to_dword(String, Dword) :-
 	%string_length(String, Length),
@@ -204,11 +321,6 @@ char_to_dword(String, Dword) :-
 	code_to_list(C4, B4),
 	append([B4, B3, B2, B1], Dword),
 	!.
-
-test_decode :-
-	decode('TESTSTOP', [ X, Y ]),
-	conv_hex_to_dword('54534554', X),
-	char_to_dword('STOP', Y).
 
 test_char_to_dword :-
 	char_to_dword('TEST', X),
@@ -407,7 +519,7 @@ test_md5_transform_list_i :-
 	conv_hex_to_dword('8587f205', Result),
 	!.
 
-divide_list(0, List, [], List).
+divide_list(0, List, [], List) :- !.
 divide_list(C, [ E | List ], [ E | Left ], Right) :-
 	D is C - 1,
 	divide_list(D, List, Left, Right),
@@ -420,14 +532,12 @@ rol_list(C, Input, Output) :-
 	!.
 
 md5_transform_states(States, BlockStr, NewStates) :-
-	decode(BlockStr, X),
-	md5_transform_states_decoded(States, X, NewStates)
-	.
+	decode_list(BlockStr, X),
+	md5_transform_states_decoded(States, X, NewStates).
 
 md5_transform_states_decoded(States, Dwords, NewStates) :-
 	md5_transform_states(1, States, Dwords, Result),
-	md5_add_states(States, Result, NewStates)
-	.
+	md5_add_states(States, Result, NewStates).
 
 md5_add_states([S1,S2,S3,S4], [T1,T2,T3,T4], [O1,O2,O3,O4]) :-
 	add_list(S1, T1, O1, _),
@@ -452,20 +562,96 @@ test_md5_transform_states :-
 	conv_hex_to_dword('00000080', One), % terminator tekstu
 	conv_hex_to_dword('00000020', Two), % 32 bity slowa 'TEST'
 	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs],
-	%print('before transform'), nl, !,
 	md5_transform_states(1, States, DwordList, Result),
-	%md5_transform_states(1, States, DwordList, [ S0, S1, S2, S3 ]),
 	md5_add_states(States, Result, [ S0, S1, S2, S3 ]),
-	%print('after transform'), nl,
-	%conv_bytes_to_hex(S0),
-	%conv_bytes_to_hex(S1),
-	%conv_bytes_to_hex(S2),
-	%conv_bytes_to_hex(S3).
 	conv_hex_to_dword('4bd93b03', S0),
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
 	conv_hex_to_dword('bf355ec9', S3).
 
+% md5_update(
+%    States, NewStates,
+%    Buffer, NewBuffer,
+%    Input, InputLen,
+%    InCount0, OutCount0,
+%    InCount1, OutCount1).
+md5_update(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+	Index is (BitCount // 8) mod 64,
+	PartLen is 64 - Index,
+	InputLen < PartLen,
+	NewBitCount is BitCount + InputLen * 8,
+	byte_copy(Buffer, Index, Input, InputLen, NewBuffer),
+	!.
+
+md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+	Index is (BitCount // 8) mod 64,
+	PartLen is 64 - Index,
+	InputLen >= PartLen,
+	NewBitCount is BitCount + InputLen * 8,
+	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer),
+	md5_transform_states(States, TmpBuffer, NewStates),
+	NewPartLen is PartLen * 8,
+	divide_list(NewPartLen, Input, _, NewInput),
+	Len is InputLen - PartLen,
+	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer),
+	!.
+
+md5_update_partlen_loop(PartLen, InputLen, PartLen) :-
+	PartLen >= InputLen + 63.
+md5_update_partlen_loop(PartLen, InputLen, I) :-
+	PartLen < InputLen - 63,
+	NewI is PartLen + 64,
+	md5_update_partlen_loop(NewI, InputLen, I).
+
+test_md5_update :-
+	test_md5_update_1,
+	test_md5_update_2.
+
+test_md5_update_1 :-
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
+	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
+	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32).
+
+test_md5_update_2 :-
+	md5_init(States),
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),
+	conv_hex_to_dword('00000080', Temp),
+	conv_hex_to_dword('00000020', Bits),
+	append([Bits, Zs], AddBits),
+	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,  Zs,Zs], Buffer),
+	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Bits,Zs], NewBuffer),
+	md5_update(States, [S0, S1, S2, S3], Buffer, NewBuffer, AddBits, 8, 448, 512),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+%	conv_bytes_to_hex(S0), nl,
+%	conv_bytes_to_hex(S1), nl,
+%	conv_bytes_to_hex(S2), nl,
+%	conv_bytes_to_hex(S3), nl.
+
+% buffer(Buffer, Index, Data, DataLen, NewBuffer).
+byte_copy(BitList, ByteIndex, Data, ByteLen, NewBuffer) :-
+	Index is ByteIndex * 8,
+	Len is ByteLen * 8,
+	buffer(BitList, Index, Data, Len, NewBuffer).
+
+test_byte_copy :-
+	byte_copy([1,1,1,1,0,0,0,0, 1,1,1,1,0,0,0,0], 1, [1,0,1,0, 1,0,1,0], 1, X),
+	X = [1,1,1,1,0,0,0,0, 1,0,1,0,1,0,1,0].
+
+buffer(Buffer, Index, Data, DataLen, NewBuffer) :-
+	divide_list(Index, Buffer, Left, CenterAndRight),
+	divide_list(DataLen, CenterAndRight, _, Right),
+	divide_list(DataLen, Data, ProperData, _),
+	append( [Left, ProperData, Right], NewBuffer).
+
+test_buffer :-
+	buffer([1,2,3,4,5], 2, [6,7], 2, X),
+	X = [1,2,6,7,5].
 
 
 
