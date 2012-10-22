@@ -150,6 +150,7 @@ run_tests :-
 	run_test(test_decode_list),
 	run_test(test_md5_update),
 	run_test(test_md5_final),
+	run_test(test_md5),
 	!.
 
 run_test(Test) :- print(Test), nl, call(Test), !.
@@ -188,7 +189,7 @@ md5(MsgStr, Digest) :-
 	!.
 
 exp_md5 :-
-	md5("TEST2", States),
+	md5("TEST", States),
 	print_digest(States).
 
 
@@ -310,6 +311,8 @@ test_decode_list :-
 	conv_hex_to_dword('20202020', B),
 	append([A,B],Test),
 	decode_list(Test, [A,B]).
+
+
 
 char_to_dword(String, Dword) :-
 	%string_length(String, Length),
@@ -562,8 +565,7 @@ test_md5_transform_states :-
 	conv_hex_to_dword('00000080', One), % terminator tekstu
 	conv_hex_to_dword('00000020', Two), % 32 bity slowa 'TEST'
 	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs],
-	md5_transform_states(1, States, DwordList, Result),
-	md5_add_states(States, Result, [ S0, S1, S2, S3 ]),
+	md5_transform_states_decoded(States, DwordList, [S0,S1,S2,S3]),
 	conv_hex_to_dword('4bd93b03', S0),
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
