@@ -179,8 +179,8 @@ test_conv_hex_to_dword_reverse :-
 % Digest - Wynik
 md5(MsgStr, Digest) :-
 	decode_string_align(MsgStr, ByteList, Length),
-	md5_reverse_bytelist(ByteList, Reversed),
-	append(Reversed, BitList),
+	% md5_reverse_bytelist(ByteList, Reversed),
+	append(ByteList, BitList),
 	md5_init(States),
 	conv_hex_to_dword('00000000', Zs),
 	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
@@ -218,13 +218,13 @@ md5_reverse_bytelist([ B0,B1,B2,B3 | ByteList], [ B3,B2,B1,B0 | Reversed ]) :-
 md5_final(States, Buffer, BitCount, Digest) :-
 	code_to_list(0, Z),
 	conv_hex_to_dword('00000000', Zs),
-	conv_hex_to_dword('00000080', PaddingStart),
+	conv_hex_to_dword('80000000', PaddingStart),
 	append([PaddingStart,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Padding),
 	HighBitCount is BitCount // 256,
 	LowBitCount is BitCount mod 256,
 	code_to_list(HighBitCount, HighByte),
 	code_to_list(LowBitCount, LowByte),
-	append([Z,Z,HighByte,LowByte, Z,Z,Z,Z], Bits),
+	append([LowByte,HighByte,Z,Z, Z,Z,Z,Z], Bits),
 	Index is (BitCount // 8) mod 64,
 	md5_final_padlen(Index, PadLen),
 	md5_update(States, NewStates, Buffer, NewBuffer, Padding, PadLen, BitCount, NewBC),
@@ -244,7 +244,7 @@ print_digest([S0, S1, S2, S3]) :-
 
 test_md5_final :-
 	md5_init(States),
-	char_to_dword('TEST', Test),
+	char_to_dword('TSET', Test),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Test,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs], Buffer),
 	md5_final(States, Buffer, 32, [S0, S1, S2, S3]),
@@ -535,9 +535,23 @@ rol_list(C, Input, Output) :-
 	!.
 
 md5_transform_states(States, BlockStr, NewStates) :-
-	decode_list(BlockStr, X),
-	md5_transform_states_decoded(States, X, NewStates).
+        decode_list(BlockStr, X), %tutaj powinno byc odwracanie
+	md5_reverse_dwordlist(X, Y),
+	md5_transform_states_decoded(States, Y, NewStates).
 
+md5_reverse_dwordlist([], []).
+md5_reverse_dwordlist([ Dword | DwordList ], [ R | Reversed ]) :-
+	md5_reverse_dword(Dword, R),
+	md5_reverse_dwordlist( DwordList, Reversed ).
+
+md5_reverse_dword(Dword, Reversed) :-
+	divide_list(8, Dword, B0, Tmp),
+	divide_list(8, Tmp, B1, Tmp2),
+	divide_list(8, Tmp2, B2, B3),
+	append([B3, B2, B1, B0], Reversed).
+
+
+% States to lista czterech list po 4 bajty kazda
 md5_transform_states_decoded(States, Dwords, NewStates) :-
 	md5_transform_states(1, States, Dwords, Result),
 	md5_add_states(States, Result, NewStates).
@@ -618,10 +632,13 @@ test_md5_update_1 :-
 
 test_md5_update_2 :-
 	md5_init(States),
-	char_to_dword('TEST', Test),
+	%char_to_dword('TEST', Test),
+	char_to_dword('TSET', Test),
 	conv_hex_to_dword('00000000', Zs),
-	conv_hex_to_dword('00000080', Temp),
-	conv_hex_to_dword('00000020', Bits),
+	%conv_hex_to_dword('00000080', Temp),
+	%conv_hex_to_dword('00000020', Bits),
+	conv_hex_to_dword('80000000', Temp),
+	conv_hex_to_dword('20000000', Bits),
 	append([Bits, Zs], AddBits),
 	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,  Zs,Zs], Buffer),
 	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Bits,Zs], NewBuffer),
