@@ -697,6 +697,7 @@ md5_update_partlen_loop(PartLen, InputLen, I) :-
 
 test_md5_update :-
 	test_md5_update_1,
+	test_md5_update_1_reverse,
 	test_md5_update_2.
 
 test_md5_update_1 :-
@@ -706,7 +707,17 @@ test_md5_update_1 :-
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
 	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32).
 
+% niedoskonaly test
+% sprawdza tylko dzialanie odwrotne dla braku bufora
+% a nie sprawdza dzialania przy braku licznikow
 test_md5_update_1_reverse :-
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
+	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32),
+	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer).
+
+test_tmp :-
 	char_to_dword('TEST', Test),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
@@ -728,11 +739,23 @@ test_md5_update_2 :-
 	conv_hex_to_dword('c344d6f0', S2),
 	conv_hex_to_dword('bf355ec9', S3).
 
-% buffer(Buffer, Index, Data, DataLen, NewBuffer).
+% w miare odwracalna relacja, aczkolwiek wady takie jak przy
+% buffer/5
+% znana wada: przy odwracaniu potafi znalezc rozwiazanie np.
+% ByteIndex = 1, Data = [], ByteLen = 0
+% chociaz nie powinno to powodowac zadnych dalszych problemow
 byte_copy(BitList, ByteIndex, Data, ByteLen, NewBuffer) :-
+	(   nonvar(BitList) ->
 	Index is ByteIndex * 8,
 	Len is ByteLen * 8,
-	buffer(BitList, Index, Data, Len, NewBuffer).
+	    buffer(BitList, Index, Data, Len, NewBuffer)
+	;   buffer(BitList, Index, Data, Len, NewBuffer),
+	    ByteIndex is Index / 8,
+	    ByteLen is Len / 8,
+	    integer(ByteIndex),
+	    integer(ByteLen)
+	).
+
 
 test_byte_copy :-
 	byte_copy([1,1,1,1,0,0,0,0, 1,1,1,1,0,0,0,0], 1, [1,0,1,0, 1,0,1,0], 1, X),
