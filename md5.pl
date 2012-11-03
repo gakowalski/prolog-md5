@@ -97,6 +97,12 @@ hex_digit(13, 100, [ 1, 1, 0, 1 ]).
 hex_digit(14, 101, [ 1, 1, 1, 0 ]).
 hex_digit(15, 102, [ 1, 1, 1, 1 ]).
 
+data_type(bit, 1).
+data_type(nibble, 4).
+data_type(byte, 8).
+data_type(word, 16).
+data_type(dword, 32).
+
 % byte_dec2bin/2
 % byte_dec2bin(Decimal, Binary)
 % true relation
@@ -106,6 +112,12 @@ byte_dec2bin(0, [0,0,0,0,0,0,0,0]).
 byte_dec2bin(Decimal, Binary) :-
 	add_list(X, [0,0,0,0,0,0,0,1], Binary, 0),
 	byte_dec2bin(Y, X),
+	Decimal is Y + 1.
+
+word_dec2bin(0, [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]).
+word_dec2bin(Decimal, Binary) :-
+	add_list(X, [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1], Binary, 0),
+	word_dec2bin(Y, X),
 	Decimal is Y + 1.
 
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
@@ -231,7 +243,7 @@ test_md5 :-
 	%print_digest(States).
 
 md5_reverse_bytelist([], []).
-md5_reverse_bytelist([ B0,B1,B2,B3 | ByteList], [ B3,B2,B1,B0 | Reversed ]) :-
+md5_reverse_bytelist([ B0,B1,B2,B3 | ByteList ], [ B3,B2,B1,B0 | Reversed ]) :-
 	md5_reverse_bytelist(ByteList, Reversed).
 
 
@@ -242,6 +254,9 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	append([PaddingStart,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Padding),
 	HighBitCount is BitCount // 256,
 	LowBitCount is BitCount mod 256,
+	%word_dec2bin(BitCount, BinBitCount),
+	%divide_list(8, BinBitCount, HighByte, LowByte),
+
 	byte_dec2bin(HighBitCount, HighByte),
 	byte_dec2bin(LowBitCount, LowByte),
 	append([LowByte,HighByte,Z,Z, Z,Z,Z,Z], Bits),
@@ -275,6 +290,17 @@ test_md5_final :-
 	% dokonczyc test
 	%print_digest(Result).
 
+test_md5_final_reverse :-
+	md5_init(States),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3),
+	md5_final(States, Buffer, 32, [S0, S1, S2, S3]),
+	char_to_dword('TSET', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Test,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs], Buffer)
+	.
 
 % (index < 56) ? (56 - index) : (120 - index);
 md5_final_padlen(Index, PadLen) :-
@@ -424,7 +450,6 @@ md5_round_constant(62, i, s42, 'bd3af235', 11).
 md5_round_constant(63, i, s43, '2ad7d2bb', 2).
 md5_round_constant(64, i, s44, 'eb86d391', 9).
 
-
 % #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
 % #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
 % #define H(x, y, z) ((x) ^ (y) ^ (z))
@@ -558,11 +583,11 @@ divide_list(C, List, Left, Right) :-
 rol_list([H|T], R) :- append(T, [H], R).
 
 % dword_rotate_left/4
-% dword_rotate_left(BitCounter, InputList, OutputList)
-% falszywa relacja, ale zachowujaca ograniczona odwracalnosc
-% BitCounter zawsze musi byc podany
-% Zawsze musi byc podana przynajmnie jedna z list: wejsciowa lub
-% wynikowa
+% dword_rotate_left(C, InputList, OutputList)
+% falszywa relacja, ale zachowujaca ograniczona i wystarczajaca
+% odwracalnosc - OutputList to InputList o C obroconych elementow
+% BitCounter zawsze musi byc podany Zawsze musi byc podana
+% przynajmnie jedna z list: wejsciowa lub wynikowa
 
 dword_rotate_left(0, Input, Input).
 dword_rotate_left(C, Input, Output) :-
@@ -681,6 +706,13 @@ test_md5_update_1 :-
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
 	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32).
 
+test_md5_update_1_reverse :-
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
+	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32),
+	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer).
+
 test_md5_update_2 :-
 	md5_init(States),
 	char_to_dword('TSET', Test),
@@ -706,11 +738,25 @@ test_byte_copy :-
 	byte_copy([1,1,1,1,0,0,0,0, 1,1,1,1,0,0,0,0], 1, [1,0,1,0, 1,0,1,0], 1, X),
 	X = [1,1,1,1,0,0,0,0, 1,0,1,0,1,0,1,0].
 
+% wydaje sie byc w miare poprawna relacja
+% tzn. wymagana jest obecnosc co najmniej jednego: Buffer lub NewBuffer
+% aczkolwiek z liczeniu "od przodu" wymagana jest dlugosc danych
+% a w liczeniu "od tylu" zaklada sie, ze dlugosc Data wynosi dokladnie
+% DataLen, co nie zawsze jest prawda (np. gdy wycinamy fragment z
+% Paddingu)
+
 buffer(Buffer, Index, Data, DataLen, NewBuffer) :-
+	(   nonvar(Buffer) ->
 	divide_list(Index, Buffer, Left, CenterAndRight),
 	divide_list(DataLen, CenterAndRight, _, Right),
 	divide_list(DataLen, Data, ProperData, _),
-	append( [Left, ProperData, Right], NewBuffer).
+	append( [Left, ProperData, Right], NewBuffer)
+	;
+	divide_list(Index, NewBuffer, Left, CenterAndRight),
+	divide_list(DataLen, CenterAndRight, Data, Right),
+	length(OrigData, DataLen),
+	append( [Left, OrigData, Right], Buffer )
+	).
 
 test_buffer :-
 	buffer([1,2,3,4,5], 2, [6,7], 2, X),
