@@ -1,3 +1,12 @@
+% do ewentualnego pozniejszego wykorzystania
+bit(0).
+bit(1).
+% bitlist/1, relacja prawdziwa, gdy (1) jest lista bitow
+bitlist([]).
+bitlist([ B | List ]) :- bit(B), bitlist(List).
+% bitlist/2, relacja prawdziwa, gdy (1) jest lista bitow o dlugosci (2)
+bitlist([], 0).
+bitlist([ B | List ], Acc) :- bit(B), bitlist(List, OldAcc), Acc is OldAcc + 1.
 % and (A, B, Result) realizuje Result = A and B
 and(0, 0, 0).
 and(0, 1, 0).
@@ -13,7 +22,7 @@ xor(0, 0, 0).
 xor(0, 1, 1).
 xor(1, 0, 1).
 xor(1, 1, 0).
-% nor (A, Result) realizuje Result = not A
+% not (A, Result) realizuje Result = not A
 not(0, 1).
 not(1, 0).
 % add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
@@ -100,7 +109,7 @@ byte_dec2bin(Decimal, Binary) :-
 	Decimal is Y + 1.
 
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
-% zapisywalna takze jako pewne dane
+% zapisywalna takze jako dane, jako "tabelka relacji"
 
 test_byte_dec2bin :- byte_dec2bin(54, [ 0, 0, 1, 1, 0, 1, 1, 0 ]).
 
@@ -275,14 +284,6 @@ md5_final_padlen(Index, PadLen) :-
 	Index >= 56,
 	PadLen is 120 - Index.
 
-% md5_update(
-%    States, NewStates,
-%    Buffer, NewBuffer,
-%    Input, InputLen,
-%    InCount0, OutCount0,
-%    InCount1, OutCount1).
-
-
 decode_string([], [], 0).
 decode_string([ Char | CharList ], [ Byte | ByteList ], Length) :-
 	byte_dec2bin(Char, Byte),
@@ -322,8 +323,6 @@ test_decode_list :-
 	conv_hex_to_dword('20202020', B),
 	append([A,B],Test),
 	decode_list(Test, [A,B]).
-
-
 
 char_to_dword(String, Dword) :-
 	%string_length(String, Length),
@@ -478,7 +477,7 @@ md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	add_list(X, AC, XaddAC, _),
 	add_list(F, XaddAC, FaddXaddAC, _),
 	add_list(A, FaddXaddAC, Sum, _),
-	rol_list(S, Sum, Rotated),
+	dword_rotate_left(S, Sum, Rotated),
 	add_list(Rotated, B, Result, _).
 
 test_md5_transform_list_f :-
@@ -555,23 +554,39 @@ divide_list(C, List, Left, Right) :-
 	append([Left, Right], List),
 	length(Left, C).
 
-%
-% rol_list/3
-% rol_list(C, List, RotatedList).
-%
-% Relacja prawdziwa, gdy RotatedList jest lista List obrocona w lewo o C
-% elementow.
-%
+% true relation
+rol_list([H|T], R) :- append(T, [H], R).
 
-% trzeba by chyba to przerobic na add(shl, shr) aby zrobic relacyjnie
-rol_list(0, Input, Input).
-rol_list(C, Input, Output) :-
+% dword_rotate_left/4
+% dword_rotate_left(BitCounter, InputList, OutputList)
+% falszywa relacja, ale zachowujaca ograniczona odwracalnosc
+% BitCounter zawsze musi byc podany
+% Zawsze musi byc podana przynajmnie jedna z list: wejsciowa lub
+% wynikowa
+
+dword_rotate_left(0, Input, Input).
+dword_rotate_left(C, Input, Output) :-
+	C > 0,
+	C < 32,
+	(   nonvar(Input)
+	->
 	divide_list(C, Input, Left, Right),
-	append(Right, Left, Output),
-	!.
+	append(Right, Left, Output)
+	;
+	D is 32 - C,
+	divide_list(D, Output, Left, Right),
+	append(Right, Left, Input)).
+
+
+%byte_dec2bin(0, [0,0,0,0,0,0,0,0]).
+%byte_dec2bin(Decimal, Binary) :-
+%	add_list(X, [0,0,0,0,0,0,0,1], Binary, 0),
+%	byte_dec2bin(Y, X),
+%	Decimal is Y + 1.
+
 
 md5_transform_states(States, BlockStr, NewStates) :-
-        decode_list(BlockStr, X), %tutaj powinno byc odwracanie
+        decode_list(BlockStr, X),
 	md5_reverse_dwordlist(X, Y),
 	md5_transform_states_decoded(States, Y, NewStates).
 
