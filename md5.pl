@@ -34,30 +34,34 @@ add(0, 1, 1, 0, 1).
 add(1, 0, 1, 0, 1).
 add(1, 1, 1, 1, 1).
 
+% true relation
 add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
 add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
-%	same_length(AT, BT),
-%	same_length(AT, ST),
 	add(A, B, Prev, S, C),
 	add_list(AT, BT, ST, Prev).
 
+% true relation
 and_list([ X ], [ Y ], [ Z ]) :- and(X, Y, Z).
 and_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- and(X, Y, Z), and_list(XT, YT, ZT).
 
+% true relation
 or_list([ X ], [ Y ], [ Z ]) :- or(X, Y, Z).
 or_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- or(X, Y, Z), or_list(XT, YT, ZT).
 
+% true relation
 xor_list([ X ], [ Y ], [ Z ]) :- xor(X, Y, Z).
 xor_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- xor(X, Y, Z), xor_list(XT, YT, ZT).
 
+% true relation
 not_list([ X ], [ Y ]) :- not(X, Y).
 not_list([ X | XT ], [ Y | YT ]) :- not(X, Y), not_list(XT, YT).
 
+% FALSE relation
 trim_list( [ 0 | List ], TrimmedList ) :- trim_list( List, TrimmedList).
 trim_list( [ 1 | List ], [ 1 | List ]).
 trim_list( [ 0 ], [ 0 ]).
 
-% hex_digit(digit, bit_list)
+% hex_digit(digit, char_code, bit_list)
 % cyfry
 hex_digit(0, 48, [ 0, 0, 0, 0 ]).
 hex_digit(1, 49, [ 0, 0, 0, 1 ]).
@@ -84,14 +88,21 @@ hex_digit(13, 100, [ 1, 1, 0, 1 ]).
 hex_digit(14, 101, [ 1, 1, 1, 0 ]).
 hex_digit(15, 102, [ 1, 1, 1, 1 ]).
 
-code_to_list(Code, Value) :-
-	High is Code // 16,
-	Low is Code mod 16,
-	hex_digit(High, _, D1),
-	hex_digit(Low, _, D2),
-	append(D1, D2, Value).
+% byte_dec2bin/2
+% byte_dec2bin(Decimal, Binary)
+% true relation
+% Relacja istnieje, gdy Decimal i Binary reprezentuja ta sama wartosc
+% bajtu.
+byte_dec2bin(0, [0,0,0,0,0,0,0,0]).
+byte_dec2bin(Decimal, Binary) :-
+	add_list(X, [0,0,0,0,0,0,0,1], Binary, 0),
+	byte_dec2bin(Y, X),
+	Decimal is Y + 1.
 
-test_code_to_list :- code_to_list(54, [ 0, 0, 1, 1, 0, 1, 1, 0 ]).
+% uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
+% zapisywalna takze jako pewne dane
+
+test_byte_dec2bin :- byte_dec2bin(54, [ 0, 0, 1, 1, 0, 1, 1, 0 ]).
 
 conv_hex_to_dword(HexStr, List) :-
 	string_to_list(HexStr, [C0, C1, C2, C3, C4, C5, C6, C7]),
@@ -136,7 +147,7 @@ conv_bytes_to_hex_reverse([ H1, H2, H3, H4, H5, H6, H7, H8 | List ]) :-
 	!.
 
 run_tests :-
-	run_test(test_code_to_list),
+	run_test(test_byte_dec2bin),
 	run_test(test_char_to_dword),
 	run_test(test_conv_hex_to_dword),
 	run_test(test_conv_hex_to_dword_reverse),
@@ -216,14 +227,14 @@ md5_reverse_bytelist([ B0,B1,B2,B3 | ByteList], [ B3,B2,B1,B0 | Reversed ]) :-
 
 
 md5_final(States, Buffer, BitCount, Digest) :-
-	code_to_list(0, Z),
+	byte_dec2bin(0, Z),
 	conv_hex_to_dword('00000000', Zs),
 	conv_hex_to_dword('80000000', PaddingStart),
 	append([PaddingStart,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Padding),
 	HighBitCount is BitCount // 256,
 	LowBitCount is BitCount mod 256,
-	code_to_list(HighBitCount, HighByte),
-	code_to_list(LowBitCount, LowByte),
+	byte_dec2bin(HighBitCount, HighByte),
+	byte_dec2bin(LowBitCount, LowByte),
 	append([LowByte,HighByte,Z,Z, Z,Z,Z,Z], Bits),
 	Index is (BitCount // 8) mod 64,
 	md5_final_padlen(Index, PadLen),
@@ -274,7 +285,7 @@ md5_final_padlen(Index, PadLen) :-
 
 decode_string([], [], 0).
 decode_string([ Char | CharList ], [ Byte | ByteList ], Length) :-
-	code_to_list(Char, Byte),
+	byte_dec2bin(Char, Byte),
 	decode_string(CharList, ByteList, TmpLength),
 	Length is TmpLength + 1.
 
@@ -289,7 +300,7 @@ align_byte_list(ByteList, NewList, Length) :-
 
 align_byte_list_append(BL, BL, 0) :- !.
 align_byte_list_append(BL, NL, PL) :-
-	code_to_list(0, Zs), % do optymalizacji
+	byte_dec2bin(0, Zs), % do optymalizacji
 	append(BL, [Zs], Tmp),
 	NewPadding is PL - 1,
 	align_byte_list_append(Tmp, NL, NewPadding).
@@ -318,10 +329,10 @@ char_to_dword(String, Dword) :-
 	%string_length(String, Length),
 	%Length is 4,
 	string_to_list(String, [ C1, C2, C3, C4 ]),
-	code_to_list(C1, B1),
-	code_to_list(C2, B2),
-	code_to_list(C3, B3),
-	code_to_list(C4, B4),
+	byte_dec2bin(C1, B1),
+	byte_dec2bin(C2, B2),
+	byte_dec2bin(C3, B3),
+	byte_dec2bin(C4, B4),
 	append([B4, B3, B2, B1], Dword),
 	!.
 
@@ -522,12 +533,37 @@ test_md5_transform_list_i :-
 	conv_hex_to_dword('8587f205', Result),
 	!.
 
-divide_list(0, List, [], List) :- !.
-divide_list(C, [ E | List ], [ E | Left ], Right) :-
-	D is C - 1,
-	divide_list(D, List, Left, Right),
-	!.
+%
+% divide_list/4
+% divide_list(C, List, Left, Right).
+%
+% Relacja prawdziwa gdy List sklada sie z dwoch list: Left o dlugosci C
+% oraz Right.
+%
+% Dzielenie listy o dlugosci N na dwie listy: liste Left o dlugosci C,
+% oraz Right o dlugosci N-C. Relacja nie wymaga znajomosci dlugosci N,
+% ale wymaga znajomosci dlugosci C, aby odliczyc miejsce rozerwania
+% list. Wartosc C moze przyjac wartosci nieujemne - w tym zero.
+%
+% W przypadku relacyjnej wersji predykatu nalezy uwazac na mozliwosc
+% wejscia w petle nieskonczona przy jednoczesnej niewiadomej zarowno
+% dlugosci glownej listy jak i pola Right.
+%
+% Example: divide_list(2, [1,2,3,4], [1,2], [3,4]).
 
+divide_list(C, List, Left, Right) :-
+	append([Left, Right], List),
+	length(Left, C).
+
+%
+% rol_list/3
+% rol_list(C, List, RotatedList).
+%
+% Relacja prawdziwa, gdy RotatedList jest lista List obrocona w lewo o C
+% elementow.
+%
+
+% trzeba by chyba to przerobic na add(shl, shr) aby zrobic relacyjnie
 rol_list(0, Input, Input).
 rol_list(C, Input, Output) :-
 	divide_list(C, Input, Left, Right),
@@ -632,11 +668,8 @@ test_md5_update_1 :-
 
 test_md5_update_2 :-
 	md5_init(States),
-	%char_to_dword('TEST', Test),
 	char_to_dword('TSET', Test),
 	conv_hex_to_dword('00000000', Zs),
-	%conv_hex_to_dword('00000080', Temp),
-	%conv_hex_to_dword('00000020', Bits),
 	conv_hex_to_dword('80000000', Temp),
 	conv_hex_to_dword('20000000', Bits),
 	append([Bits, Zs], AddBits),
@@ -647,10 +680,6 @@ test_md5_update_2 :-
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
 	conv_hex_to_dword('bf355ec9', S3).
-%	conv_bytes_to_hex(S0), nl,
-%	conv_bytes_to_hex(S1), nl,
-%	conv_bytes_to_hex(S2), nl,
-%	conv_bytes_to_hex(S3), nl.
 
 % buffer(Buffer, Index, Data, DataLen, NewBuffer).
 byte_copy(BitList, ByteIndex, Data, ByteLen, NewBuffer) :-
