@@ -495,13 +495,164 @@ md5_transform_list(Trans, [ X | XT ], [ Y | YT ], [ Z | ZT ], [ R | Result]) :-
 	md5_transform(Trans, X, Y, Z, R),
 	md5_transform_list(Trans, XT, YT, ZT, Result).
 
+% add(I1, I2, I3, I4, PC1, PC2, C1, C2, S)
+add(0,0,0,0,0,0,0,0,0).
+add(0,0,0,0,0,1,0,0,1).
+add(0,0,0,0,1,0,0,1,0).
+add(0,0,0,0,1,1,0,1,1).
+add(0,0,0,1,0,0,0,0,1).
+add(0,0,0,1,0,1,0,1,0).
+add(0,0,0,1,1,0,0,1,1).
+add(0,0,0,1,1,1,1,0,0).
+add(0,0,1,0,0,0,0,0,1).
+add(0,0,1,0,0,1,0,1,0).
+add(0,0,1,0,1,0,0,1,1).
+add(0,0,1,0,1,1,1,0,0).
+add(0,0,1,1,0,0,0,1,0).
+add(0,0,1,1,0,1,0,1,1).
+add(0,0,1,1,1,0,1,0,0).
+add(0,0,1,1,1,1,1,0,1).
+add(0,1,0,0,0,0,0,0,1).
+add(0,1,0,0,0,1,0,1,0).
+add(0,1,0,0,1,0,0,1,1).
+add(0,1,0,0,1,1,1,0,0).
+add(0,1,0,1,0,0,0,1,0).
+add(0,1,0,1,0,1,0,1,1).
+add(0,1,0,1,1,0,1,0,0).
+add(0,1,0,1,1,1,1,0,1).
+add(0,1,1,0,0,0,0,1,0).
+add(0,1,1,0,0,1,0,1,1).
+add(0,1,1,0,1,0,1,0,0).
+add(0,1,1,0,1,1,1,0,1).
+add(0,1,1,1,0,0,0,1,1).
+add(0,1,1,1,0,1,1,0,0).
+add(0,1,1,1,1,0,1,0,1).
+add(0,1,1,1,1,1,1,1,0).
+add(1,0,0,0,0,0,0,0,1).
+add(1,0,0,0,0,1,0,1,0).
+add(1,0,0,0,1,0,0,1,1).
+add(1,0,0,0,1,1,1,0,0).
+add(1,0,0,1,0,0,0,1,0).
+add(1,0,0,1,0,1,0,1,1).
+add(1,0,0,1,1,0,1,0,0).
+add(1,0,0,1,1,1,1,0,1).
+add(1,0,1,0,0,0,0,1,0).
+add(1,0,1,0,0,1,0,1,1).
+add(1,0,1,0,1,0,1,0,0).
+add(1,0,1,0,1,1,1,0,1).
+add(1,0,1,1,0,0,0,1,1).
+add(1,0,1,1,0,1,1,0,0).
+add(1,0,1,1,1,0,1,0,1).
+add(1,0,1,1,1,1,1,1,0).
+add(1,1,0,0,0,0,0,1,0).
+add(1,1,0,0,0,1,0,1,1).
+add(1,1,0,0,1,0,1,0,0).
+add(1,1,0,0,1,1,1,0,1).
+add(1,1,0,1,0,0,0,1,1).
+add(1,1,0,1,0,1,1,0,0).
+add(1,1,0,1,1,0,1,0,1).
+add(1,1,0,1,1,1,1,1,0).
+add(1,1,1,0,0,0,0,1,1).
+add(1,1,1,0,0,1,1,0,0).
+add(1,1,1,0,1,0,1,0,1).
+add(1,1,1,0,1,1,1,1,0).
+add(1,1,1,1,0,0,1,0,0).
+add(1,1,1,1,0,1,1,0,1).
+add(1,1,1,1,1,0,1,1,0).
+add(1,1,1,1,1,1,1,1,1).
+add(0,0,0,0,0,0,0,0,0).
+add(0,0,0,0,0,1,0,0,1).
+add(0,0,0,0,1,0,0,1,0).
+add(0,0,0,0,1,1,0,1,1).
+add(0,0,0,1,0,0,0,0,1).
+add(0,0,0,1,0,1,0,1,0).
+add(0,0,0,1,1,0,0,1,1).
+add(0,0,0,1,1,1,1,0,0).
+add(0,0,1,0,0,0,0,0,1).
+add(0,0,1,0,0,1,0,1,0).
+add(0,0,1,0,1,0,0,1,1).
+add(0,0,1,0,1,1,1,0,0).
+add(0,0,1,1,0,0,0,1,0).
+add(0,0,1,1,0,1,0,1,1).
+add(0,0,1,1,1,0,1,0,0).
+add(0,0,1,1,1,1,1,0,1).
+add(0,1,0,0,0,0,0,0,1).
+add(0,1,0,0,0,1,0,1,0).
+add(0,1,0,0,1,0,0,1,1).
+add(0,1,0,0,1,1,1,0,0).
+add(0,1,0,1,0,0,0,1,0).
+add(0,1,0,1,0,1,0,1,1).
+add(0,1,0,1,1,0,1,0,0).
+add(0,1,0,1,1,1,1,0,1).
+add(0,1,1,0,0,0,0,1,0).
+add(0,1,1,0,0,1,0,1,1).
+add(0,1,1,0,1,0,1,0,0).
+add(0,1,1,0,1,1,1,0,1).
+add(0,1,1,1,0,0,0,1,1).
+add(0,1,1,1,0,1,1,0,0).
+add(0,1,1,1,1,0,1,0,1).
+add(0,1,1,1,1,1,1,1,0).
+add(1,0,0,0,0,0,0,0,1).
+add(1,0,0,0,0,1,0,1,0).
+add(1,0,0,0,1,0,0,1,1).
+add(1,0,0,0,1,1,1,0,0).
+add(1,0,0,1,0,0,0,1,0).
+add(1,0,0,1,0,1,0,1,1).
+add(1,0,0,1,1,0,1,0,0).
+add(1,0,0,1,1,1,1,0,1).
+add(1,0,1,0,0,0,0,1,0).
+add(1,0,1,0,0,1,0,1,1).
+add(1,0,1,0,1,0,1,0,0).
+add(1,0,1,0,1,1,1,0,1).
+add(1,0,1,1,0,0,0,1,1).
+add(1,0,1,1,0,1,1,0,0).
+add(1,0,1,1,1,0,1,0,1).
+add(1,0,1,1,1,1,1,1,0).
+add(1,1,0,0,0,0,0,1,0).
+add(1,1,0,0,0,1,0,1,1).
+add(1,1,0,0,1,0,1,0,0).
+add(1,1,0,0,1,1,1,0,1).
+add(1,1,0,1,0,0,0,1,1).
+add(1,1,0,1,0,1,1,0,0).
+add(1,1,0,1,1,0,1,0,1).
+add(1,1,0,1,1,1,1,1,0).
+add(1,1,1,0,0,0,0,1,1).
+add(1,1,1,0,0,1,1,0,0).
+add(1,1,1,0,1,0,1,0,1).
+add(1,1,1,0,1,1,1,1,0).
+add(1,1,1,1,0,0,1,0,0).
+add(1,1,1,1,0,1,1,0,1).
+add(1,1,1,1,1,0,1,1,0).
+add(1,1,1,1,1,1,1,1,1).
+
+
+% dlaczego backtracking sie tutaj nie zatrzymuje, ale bada dodatkowe
+% przypadki przy nieznanych C1 i C2?
+add_list( [ I1 ], [ I2 ], [ I3 ], [ I4 ], C1, C2, [ S ]) :- add(I1, I2, I3, I4, 0, 0, C1, C2, S).
+add_list( [ I1 | L1 ], [ I2 | L2 ], [ I3 | L3 ], [ I4 | L4 ], C1, C2, [ S | ST ]) :-
+	add(I1, I2, I3, I4, PC1, PC2, C1, C2, S),
+	add_list(L1, L2, L3, L4, PC1, PC2, ST).
+
+%add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
+%add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
+%	add(A, B, Prev, S, C),
+%	add_list(AT, BT, ST, Prev).
+
+
 % zlozona transformacja - makra FF, GG, HH, II
 md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	md5_transform_list(Trans, B, C, D, F),
 	% operacje mozliwe do dalszego scalenia!
-	add_list(X, AC, XaddAC, _),
-	add_list(F, XaddAC, FaddXaddAC, _),
-	add_list(A, FaddXaddAC, Sum, _),
+	% Sum = A + FaddXaddAC = A + F + XaddAC = A + F + X + AC
+	% moznaby sprobowac stworzyc sumator dla 4 wejsc
+
+	% 1432 inferences
+	%add_list(X, AC, XaddAC, _),
+	%add_list(F, XaddAC, FaddXaddAC, _),
+	%add_list(A, FaddXaddAC, Sum, _),
+
+	add_list(A, F, X, AC, _, _, Sum), % 1362 inferences
+
 	dword_rotate_left(S, Sum, Rotated),
 	add_list(Rotated, B, Result, _).
 
@@ -517,6 +668,27 @@ test_md5_transform_list_f :-
 	%conv_bytes_to_hex(Result),
 	conv_hex_to_dword('cec2911e', Result),
 	!.
+
+% bardzo wazne - budulec calej funkcji MD5!
+test_md5_transform_list_f_reverse :-
+	conv_hex_to_dword('d76aa478', AC),
+	conv_hex_to_dword('cec2911e', Result),
+	conv_hex_to_dword('67452301', A1),
+	conv_hex_to_dword('efcdab89', B1),
+	conv_hex_to_dword('98badcfe', C1),
+	conv_hex_to_dword('10325476', D1),
+	conv_hex_to_dword('54534554', X1),
+        md5_rotate_constant(s11, S),
+	length(A, 32),
+	length(B, 32),
+	length(C, 32),
+	length(D, 32),
+	md5_transform_list(f, A, B, C, D, X, S, AC, Result),
+	A = A1,
+	B = B1,
+	C = C1,
+	D = D1,
+	X = X1.
 
 test_md5_transform_list_g :-
 	conv_hex_to_dword('f24947ec', A),
@@ -626,7 +798,6 @@ md5_reverse_dword(Dword, Reversed) :-
 	divide_list(8, Tmp2, B2, B3),
 	append([B3, B2, B1, B0], Reversed).
 
-
 % States to lista czterech list po 4 bajty kazda
 md5_transform_states_decoded(States, Dwords, NewStates) :-
 	md5_transform_states(1, States, Dwords, Result),
@@ -642,6 +813,7 @@ md5_transform_states(65, States, _, States).
 md5_transform_states(Round, [ A, B, C, D ], X, NewStates) :-
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, RotValue),
+	length(X, 16),
 	nth0(Index, X, XValue),
 	conv_hex_to_dword(AC, DwordAC),
 	md5_transform_list(Trans, A, B, C, D, XValue, RotValue, DwordAC, Result),
@@ -660,6 +832,20 @@ test_md5_transform_states :-
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
 	conv_hex_to_dword('bf355ec9', S3).
+
+% jeszcze nie dziala, zawiesza sie
+test_md5_transform_states_reverse :-
+	md5_init(States),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3),
+	md5_transform_states_decoded(States, DwordList, [S0,S1,S2,S3]),
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	conv_hex_to_dword('00000080', One), % terminator tekstu
+	conv_hex_to_dword('00000020', Two), % 32 bity slowa 'TEST'
+	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs].
 
 % md5_update(
 %    States, NewStates,
@@ -711,13 +897,6 @@ test_md5_update_1 :-
 % sprawdza tylko dzialanie odwrotne dla braku bufora
 % a nie sprawdza dzialania przy braku licznikow
 test_md5_update_1_reverse :-
-	char_to_dword('TEST', Test),
-	conv_hex_to_dword('00000000', Zs),  % padding
-	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
-	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32),
-	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer).
-
-test_tmp :-
 	char_to_dword('TEST', Test),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
