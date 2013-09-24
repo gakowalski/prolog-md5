@@ -1,6 +1,20 @@
+init :-
+	use_module(library(clpfd)).
+
 % do ewentualnego pozniejszego wykorzystania
 bit(0).
 bit(1).
+
+data_type(bit, 1).
+data_type(nibble, 4).
+data_type(byte, 8).
+data_type(word, 16).
+data_type(dword, 32).
+
+data(Type, Storage) :-
+	data_type(Type, Length),
+	functor(Storage, bits, Length).
+
 % bitlist/1, relacja prawdziwa, gdy (1) jest lista bitow
 bitlist([]).
 bitlist([ B | List ]) :- bit(B), bitlist(List).
@@ -8,29 +22,29 @@ bitlist([ B | List ]) :- bit(B), bitlist(List).
 bitlist([], 0).
 bitlist([ B | List ], Acc) :- bit(B), bitlist(List, OldAcc), Acc is OldAcc + 1.
 % and (A, B, Result) realizuje Result = A and B
-and(0, 0, 0).
-and(0, 1, 0).
-and(1, 0, 0).
-and(1, 1, 1).
+and(A, B, Result) :-
+	[A, B, Result] ins 0..1,
+	A #/\ B #<==> Result.
 % or (A, B, Result) realizuje Result = A or B
-or(0, 0, 0).
-or(0, 1, 1).
-or(1, 0, 1).
-or(1, 1, 1).
+or(A, B, Result) :-
+	[A, B, Result] ins 0..1,
+	A #\/ B #<==> Result.
 % xor (A, B, Result) realizuje Result = A xor B
-xor(0, 0, 0).
-xor(0, 1, 1).
-xor(1, 0, 1).
-xor(1, 1, 0).
+xor(A, B, Result) :-
+	and(A, B, AR),
+	or(A, B, OR),
+	not(AR, NAR),
+	and(OR, NAR, Result).
 % not (A, Result) realizuje Result = not A
-not(0, 1).
-not(1, 0).
+not(A, Result) :-
+	[A, Result] ins 0..1,
+	#\ A #<==> Result.
 % add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
-% add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
-add(0, 0, 0, 0).
-add(0, 1, 1, 0).
-add(1, 0, 1, 0).
-add(1, 1, 0, 1).
+add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
+% add(0, 0, 0, 0).
+% add(0, 1, 1, 0).
+% add(1, 0, 1, 0).
+% add(1, 1, 0, 1).
 % add (A, B, PrevCarry, Sum, NextCarry) realizuje sume dwoch bitow
 % add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), or(C1, C2, C).
 % czy ostatni OR mo¿e byæ zamieniony na XOR?
@@ -48,6 +62,21 @@ add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
 add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
 	add(A, B, Prev, S, C),
 	add_list(AT, BT, ST, Prev).
+
+add_bits( A, B, Sum, bits(Carry) ) :-
+        A = data(Type, ABits),
+	B = data(Type, BBits),
+	Sum = data(Type, SBits),
+	data_type(Type, Length),
+	add_bits(ABits, BBits, SBits, 0, Carry, Length).
+add_bits(_, _, _, C, C, 0).
+add_bits(A, B, S, P, NewC, I) :-
+	arg(I, A, AV),
+	arg(I, B, BV),
+	arg(I, S, SV),
+	NewI is I - 1,
+	add(AV, BV, P, SV, C),
+	add_bits(A, B, S, C, NewC, NewI).
 
 % true relation
 and_list([ X ], [ Y ], [ Z ]) :- and(X, Y, Z).
@@ -97,12 +126,6 @@ hex_digit(13, 100, [ 1, 1, 0, 1 ]).
 hex_digit(14, 101, [ 1, 1, 1, 0 ]).
 hex_digit(15, 102, [ 1, 1, 1, 1 ]).
 
-data_type(bit, 1).
-data_type(nibble, 4).
-data_type(byte, 8).
-data_type(word, 16).
-data_type(dword, 32).
-
 % byte_dec2bin/2
 % byte_dec2bin(Decimal, Binary)
 % true relation
@@ -113,6 +136,14 @@ byte_dec2bin(Decimal, Binary) :-
 	add_list(X, [0,0,0,0,0,0,0,1], Binary, 0),
 	byte_dec2bin(Y, X),
 	Decimal is Y + 1.
+
+byte_dec2bin2(0, bits(0,0,0,0, 0,0,0,0)).
+byte_dec2bin2(Decimal, Binary) :-
+	data(byte, Storage),
+	add_bits(Storage, bits(0,0,0,0, 0,0,0,1), Binary, 0, 0, 8),
+	byte_dec2bin2(Y, Storage),
+	Decimal is Y + 1.
+
 
 word_dec2bin(0, [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]).
 word_dec2bin(Decimal, Binary) :-
@@ -625,36 +656,55 @@ add(1,1,1,1,0,1,1,0,1).
 add(1,1,1,1,1,0,1,1,0).
 add(1,1,1,1,1,1,1,1,1).
 
+encode(0, 0, 0, 0, [0, 0, 0]).
+encode(0, 0, 0, 1, [0, 0, 1]).
+encode(0, 0, 1, 0, [0, 0, 1]).
+encode(0, 1, 0, 0, [0, 0, 1]).
+encode(1, 0, 0, 0, [0, 0, 1]).
+encode(0, 0, 1, 1, [0, 1, 0]).
+encode(0, 1, 0, 1, [0, 1, 0]).
+encode(1, 0, 0, 1, [0, 1, 0]).
+encode(0, 1, 1, 0, [0, 1, 0]).
+encode(1, 0, 1, 0, [0, 1, 0]).
+encode(1, 1, 0, 0, [0, 1, 0]).
+encode(0, 1, 1, 1, [0, 1, 1]).
+encode(1, 0, 1, 1, [0, 1, 1]).
+encode(1, 1, 0, 1, [0, 1, 1]).
+encode(1, 1, 1, 0, [0, 1, 1]).
+encode(1, 1, 1, 1, [1, 0, 0]).
 
 % dlaczego backtracking sie tutaj nie zatrzymuje, ale bada dodatkowe
-% przypadki przy nieznanych C1 i C2?
+% przypadki?
 add_list( [ I1 ], [ I2 ], [ I3 ], [ I4 ], C1, C2, [ S ]) :- add(I1, I2, I3, I4, 0, 0, C1, C2, S).
 add_list( [ I1 | L1 ], [ I2 | L2 ], [ I3 | L3 ], [ I4 | L4 ], C1, C2, [ S | ST ]) :-
 	add(I1, I2, I3, I4, PC1, PC2, C1, C2, S),
 	add_list(L1, L2, L3, L4, PC1, PC2, ST).
 
-%add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
-%add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
-%	add(A, B, Prev, S, C),
-%	add_list(AT, BT, ST, Prev).
-
+% wszystko sie potencjalnie sprowdza do wykonania optymalnej prawdziwej
+% relacji dodawania czterech 32-bitowych cyfr
+%
+add_list_2( [ I1 ], [ I2 ], [ I3 ], [ I4 ], C1, C2, [ S ]) :-
+	encode(I1, I2, I3, I4, [C1, C2, S]).
+add_list_2( [ I1 | L1 ], [ I2 | L2 ], [ I3 | L3 ], [ I4 | L4 ], C1, C2, [ S | ST ]) :-
+	encode(I1, I2, I3, I4, TMP),
+	add_list(TMP, [0, PC1, PC2], [C1, C2, S], _),
+	add_list_2(L1, L2, L3, L4, PC1, PC2, ST).
 
 % zlozona transformacja - makra FF, GG, HH, II
+% zaimplementowane dzialanie odwrotne, ale niesprawdzone
+% bo strasznie czasochlonna petla
 md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
+	(   var(Result) ->
 	md5_transform_list(Trans, B, C, D, F),
-	% operacje mozliwe do dalszego scalenia!
-	% Sum = A + FaddXaddAC = A + F + XaddAC = A + F + X + AC
-	% moznaby sprobowac stworzyc sumator dla 4 wejsc
-
-	% 1432 inferences
-	%add_list(X, AC, XaddAC, _),
-	%add_list(F, XaddAC, FaddXaddAC, _),
-	%add_list(A, FaddXaddAC, Sum, _),
-
-	add_list(A, F, X, AC, _, _, Sum), % 1362 inferences
-
+	%add_list(A, F, X, AC, _, _, Sum), % 1362 inferences
+	add_list_2(A, F, X, AC, _, _, Sum), % 2155 inferences
 	dword_rotate_left(S, Sum, Rotated),
-	add_list(Rotated, B, Result, _).
+	add_list(Rotated, B, Result, _)
+	;   add_list(Rotated, B, Result, _),
+	    dword_rotate_left(S, Sum, Rotated),
+	    add_list_2(A, F, X, AC, _, _, Sum),
+	    md5_transform_list(Trans, B, C, D, F)
+	).
 
 test_md5_transform_list_f :-
 	conv_hex_to_dword('67452301', A),
@@ -680,15 +730,16 @@ test_md5_transform_list_f_reverse :-
 	conv_hex_to_dword('54534554', X1),
         md5_rotate_constant(s11, S),
 	length(A, 32),
-	length(B, 32),
-	length(C, 32),
-	length(D, 32),
-	md5_transform_list(f, A, B, C, D, X, S, AC, Result),
+	%length(B, 32),
+	%length(C, 32),
+	%length(D, 32),
+	md5_transform_list(f, A, B1, C1, D1, X1, S, AC, Result),
 	A = A1,
-	B = B1,
-	C = C1,
-	D = D1,
-	X = X1.
+	%B = B1,
+	%C = C1,
+	%D = D1,
+	%X = X1,
+	true.
 
 test_md5_transform_list_g :-
 	conv_hex_to_dword('f24947ec', A),
@@ -964,6 +1015,30 @@ test_buffer :-
 	buffer([1,2,3,4,5], 2, [6,7], 2, X),
 	X = [1,2,6,7,5].
 
+
+addx :-
+	A = [0,1,0,1,1,0,0,1,1,0,1],
+	print('A  = '), print(A), nl,
+	B = [0,0,0,1,1,0,1,0,1,0,1],
+	print('B  = '), print(B), nl,
+	add_list(A, B, S, _),
+	print('S  = '), print(S), nl, nl,
+	and_list(A, B, Top),
+	print('a  = '), print(Top), nl,
+	or_list(A, B, Bottom),
+	print('b  = '), print(Bottom), nl, nl,
+        rol_list(Top, RTop),
+	xor_list(Top, RTop, Tmp1),
+	and_list(Tmp1, Top, C0),
+	% tam, gdzie w C0 jest 1, tam w Sumie na pewno bedzie 0
+	print('C0 = '), print(C0), nl,
+	and_list(Top, RTop, C1),
+	% tam, gdzie w C1 jest 1, tam w Sumie na penwo bedzie 1
+	print('C1 = '), print(C1), nl,
+	not_list(A, NotA),
+	not_list(B, NotB),
+	and_list(NotA, NotB, PossibleC),
+	print('CP = '), print(PossibleC), nl.
 
 
 
