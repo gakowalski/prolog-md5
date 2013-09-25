@@ -1,6 +1,3 @@
-init :-
-	use_module(library(clpfd)).
-
 % do ewentualnego pozniejszego wykorzystania
 bit(0).
 bit(1).
@@ -22,29 +19,29 @@ bitlist([ B | List ]) :- bit(B), bitlist(List).
 bitlist([], 0).
 bitlist([ B | List ], Acc) :- bit(B), bitlist(List, OldAcc), Acc is OldAcc + 1.
 % and (A, B, Result) realizuje Result = A and B
-and(A, B, Result) :-
-	[A, B, Result] ins 0..1,
-	A #/\ B #<==> Result.
+and(0, 0, 0).
+and(0, 1, 0).
+and(1, 0, 0).
+and(1, 1, 1).
 % or (A, B, Result) realizuje Result = A or B
-or(A, B, Result) :-
-	[A, B, Result] ins 0..1,
-	A #\/ B #<==> Result.
+or(0, 0, 0).
+or(0, 1, 1).
+or(1, 0, 1).
+or(1, 1, 1).
 % xor (A, B, Result) realizuje Result = A xor B
-xor(A, B, Result) :-
-	and(A, B, AR),
-	or(A, B, OR),
-	not(AR, NAR),
-	and(OR, NAR, Result).
+xor(0, 0, 0).
+xor(0, 1, 1).
+xor(1, 0, 1).
+xor(1, 1, 0).
 % not (A, Result) realizuje Result = not A
-not(A, Result) :-
-	[A, Result] ins 0..1,
-	#\ A #<==> Result.
+not(0, 1).
+not(1, 0).
 % add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
-add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
-% add(0, 0, 0, 0).
-% add(0, 1, 1, 0).
-% add(1, 0, 1, 0).
-% add(1, 1, 0, 1).
+% add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
+add(0, 0, 0, 0).
+add(0, 1, 1, 0).
+add(1, 0, 1, 0).
+add(1, 1, 0, 1).
 % add (A, B, PrevCarry, Sum, NextCarry) realizuje sume dwoch bitow
 % add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), or(C1, C2, C).
 % czy ostatni OR mo¿e byæ zamieniony na XOR?
