@@ -1,6 +1,8 @@
+init :-
+	use_module(library(clpfd)).
+
 % do ewentualnego pozniejszego wykorzystania
-bit(0).
-bit(1).
+bit(B) :- B in 0..1.
 
 data_type(bit, 1).
 data_type(nibble, 4).
@@ -12,68 +14,28 @@ data(Type, Storage) :-
 	data_type(Type, Length),
 	functor(Storage, bits, Length).
 
-% bitlist/1, relacja prawdziwa, gdy (1) jest lista bitow
-bitlist([]).
-bitlist([ B | List ]) :- bit(B), bitlist(List).
-% bitlist/2, relacja prawdziwa, gdy (1) jest lista bitow o dlugosci (2)
-bitlist([], 0).
-bitlist([ B | List ], Acc) :- bit(B), bitlist(List, OldAcc), Acc is OldAcc + 1.
 % and (A, B, Result) realizuje Result = A and B
-and(0, 0, 0).
-and(0, 1, 0).
-and(1, 0, 0).
-and(1, 1, 1).
+and(A, B, Result) :- [A, B, Result] ins 0..1, A #/\ B #<==> Result.
 % or (A, B, Result) realizuje Result = A or B
-or(0, 0, 0).
-or(0, 1, 1).
-or(1, 0, 1).
-or(1, 1, 1).
+or(A, B, Result) :- [A, B, Result] ins 0..1, A #\/ B #<==> Result.
 % xor (A, B, Result) realizuje Result = A xor B
-xor(0, 0, 0).
-xor(0, 1, 1).
-xor(1, 0, 1).
-xor(1, 1, 0).
+xor(A, B, Result) :-
+	and(A, B, AR),
+	or(A, B, OR),
+	not(AR, NAR),
+	and(OR, NAR, Result).
 % not (A, Result) realizuje Result = not A
-not(0, 1).
-not(1, 0).
+not(A, Result) :- [A, Result] ins 0..1, #\ A #<==> Result.
 % add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
-% add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
-add(0, 0, 0, 0).
-add(0, 1, 1, 0).
-add(1, 0, 1, 0).
-add(1, 1, 0, 1).
+add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
 % add (A, B, PrevCarry, Sum, NextCarry) realizuje sume dwoch bitow
-% add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), or(C1, C2, C).
-% czy ostatni OR mo¿e byæ zamieniony na XOR?
-add(0, 0, 0, 0, 0).
-add(0, 1, 0, 1, 0).
-add(1, 0, 0, 1, 0).
-add(1, 1, 0, 0, 1).
-add(0, 0, 1, 1, 0).
-add(0, 1, 1, 0, 1).
-add(1, 0, 1, 0, 1).
-add(1, 1, 1, 1, 1).
+add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), or(C1, C2, C).
 
 % true relation
 add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
 add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
 	add(A, B, Prev, S, C),
 	add_list(AT, BT, ST, Prev).
-
-add_bits( A, B, Sum, bits(Carry) ) :-
-        A = data(Type, ABits),
-	B = data(Type, BBits),
-	Sum = data(Type, SBits),
-	data_type(Type, Length),
-	add_bits(ABits, BBits, SBits, 0, Carry, Length).
-add_bits(_, _, _, C, C, 0).
-add_bits(A, B, S, P, NewC, I) :-
-	arg(I, A, AV),
-	arg(I, B, BV),
-	arg(I, S, SV),
-	NewI is I - 1,
-	add(AV, BV, P, SV, C),
-	add_bits(A, B, S, C, NewC, NewI).
 
 % true relation
 and_list([ X ], [ Y ], [ Z ]) :- and(X, Y, Z).
@@ -91,62 +53,53 @@ xor_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- xor(X, Y, Z), xor_list(XT, YT, Z
 not_list([ X ], [ Y ]) :- not(X, Y).
 not_list([ X | XT ], [ Y | YT ]) :- not(X, Y), not_list(XT, YT).
 
-% FALSE relation
-trim_list( [ 0 | List ], TrimmedList ) :- trim_list( List, TrimmedList).
-trim_list( [ 1 | List ], [ 1 | List ]).
-trim_list( [ 0 ], [ 0 ]).
-
 % hex_digit(digit, char_code, bit_list)
 % cyfry
-hex_digit(0, 48, [ 0, 0, 0, 0 ]).
-hex_digit(1, 49, [ 0, 0, 0, 1 ]).
-hex_digit(2, 50, [ 0, 0, 1, 0 ]).
-hex_digit(3, 51, [ 0, 0, 1, 1 ]).
-hex_digit(4, 52, [ 0, 1, 0, 0 ]).
-hex_digit(5, 53, [ 0, 1, 0, 1 ]).
-hex_digit(6, 54, [ 0, 1, 1, 0 ]).
-hex_digit(7, 55, [ 0, 1, 1, 1 ]).
-hex_digit(8, 56, [ 1, 0, 0, 0 ]).
-hex_digit(9, 57, [ 1, 0, 0, 1 ]).
+hex_digit(D, CC, [B3,B2,B1,B0]) :-
+	D in 0..9,
+	CC in 48..57,
+	[B3,B2,B1,B0] ins 0..1,
+	CC #= D + 48,
+	B0 #= D mod 2,
+	B1 #= (D / 2) mod 2,
+	B2 #= (D / 4) mod 2,
+	B3 #= (D / 8) mod 2.
 % duze litery
-hex_digit(10, 65, [ 1, 0, 1, 0 ]).
-hex_digit(11, 66, [ 1, 0, 1, 1 ]).
-hex_digit(12, 67, [ 1, 1, 0, 0 ]).
-hex_digit(13, 68, [ 1, 1, 0, 1 ]).
-hex_digit(14, 69, [ 1, 1, 1, 0 ]).
-hex_digit(15, 70, [ 1, 1, 1, 1 ]).
+hex_digit(D, CC, [B3,B2,B1,B0]) :-
+	D in 10..15,
+	CC in 65..70,
+	[B3,B2,B1,B0] ins 0..1,
+	CC #= D + 55,
+	B0 #= D mod 2,
+	B1 #= (D / 2) mod 2,
+	B2 #= (D / 4) mod 2,
+	B3 #= (D / 8) mod 2.
 % male litery
-hex_digit(10, 97, [ 1, 0, 1, 0 ]).
-hex_digit(11, 98, [ 1, 0, 1, 1 ]).
-hex_digit(12, 99, [ 1, 1, 0, 0 ]).
-hex_digit(13, 100, [ 1, 1, 0, 1 ]).
-hex_digit(14, 101, [ 1, 1, 1, 0 ]).
-hex_digit(15, 102, [ 1, 1, 1, 1 ]).
-
+hex_digit(D, CC, [B3,B2,B1,B0]) :-
+	D in 10..15,
+	CC in 97..102,
+	[B3,B2,B1,B0] ins 0..1,
+	CC #= D + 87,
+	B0 #= D mod 2,
+	B1 #= (D / 2) mod 2,
+	B2 #= (D / 4) mod 2,
+	B3 #= (D / 8) mod 2.
 % byte_dec2bin/2
 % byte_dec2bin(Decimal, Binary)
 % true relation
 % Relacja istnieje, gdy Decimal i Binary reprezentuja ta sama wartosc
 % bajtu.
-byte_dec2bin(0, [0,0,0,0,0,0,0,0]).
-byte_dec2bin(Decimal, Binary) :-
-	add_list(X, [0,0,0,0,0,0,0,1], Binary, 0),
-	byte_dec2bin(Y, X),
-	Decimal is Y + 1.
-
-byte_dec2bin2(0, bits(0,0,0,0, 0,0,0,0)).
-byte_dec2bin2(Decimal, Binary) :-
-	data(byte, Storage),
-	add_bits(Storage, bits(0,0,0,0, 0,0,0,1), Binary, 0, 0, 8),
-	byte_dec2bin2(Y, Storage),
-	Decimal is Y + 1.
-
-
-word_dec2bin(0, [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]).
-word_dec2bin(Decimal, Binary) :-
-	add_list(X, [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1], Binary, 0),
-	word_dec2bin(Y, X),
-	Decimal is Y + 1.
+byte_dec2bin(Dec, [B7,B6,B5,B4,B3,B2,B1,B0]) :-
+	[B7,B6,B5,B4,B3,B2,B1,B0] ins 0..1,
+	Dec in 0..255,
+	B0 #= Dec mod 2,
+	B1 #= (Dec / 2) mod 2,
+	B2 #= (Dec / 4) mod 2,
+	B3 #= (Dec / 8) mod 2,
+	B4 #= (Dec / 16) mod 2,
+	B5 #= (Dec / 32) mod 2,
+	B6 #= (Dec / 64) mod 2,
+	B7 #= (Dec / 127) mod 2.
 
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
@@ -238,6 +191,7 @@ test_conv_hex_to_dword_reverse :-
 % MsgStr - lista kodow znakowych, np. "Test"
 % Digest - Wynik
 md5(MsgStr, Digest) :-
+	MsgStr ins 0..255,
 	decode_string_align(MsgStr, ByteList, Length),
 	% md5_reverse_bytelist(ByteList, Reversed),
 	append(ByteList, BitList),
@@ -270,6 +224,14 @@ test_md5 :-
 	conv_hex_to_dword('bf355ec9', S3).
 	%print_digest(States).
 
+reverse_md5 :-
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3),
+	md5(Word, [S0, S1, S2, S3]),
+	print(Word), nl.
+
 md5_reverse_bytelist([], []).
 md5_reverse_bytelist([ B0,B1,B2,B3 | ByteList ], [ B3,B2,B1,B0 | Reversed ]) :-
 	md5_reverse_bytelist(ByteList, Reversed).
@@ -280,15 +242,15 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	conv_hex_to_dword('00000000', Zs),
 	conv_hex_to_dword('80000000', PaddingStart),
 	append([PaddingStart,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Padding),
-	HighBitCount is BitCount // 256,
-	LowBitCount is BitCount mod 256,
+	HighBitCount #= BitCount / 256,
+	LowBitCount #= BitCount mod 256,
 	%word_dec2bin(BitCount, BinBitCount),
 	%divide_list(8, BinBitCount, HighByte, LowByte),
 
 	byte_dec2bin(HighBitCount, HighByte),
 	byte_dec2bin(LowBitCount, LowByte),
 	append([LowByte,HighByte,Z,Z, Z,Z,Z,Z], Bits),
-	Index is (BitCount // 8) mod 64,
+	Index #= (BitCount / 8) mod 64,
 	md5_final_padlen(Index, PadLen),
 	md5_update(States, NewStates, Buffer, NewBuffer, Padding, PadLen, BitCount, NewBC),
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _).
@@ -484,38 +446,19 @@ md5_round_constant(64, i, s44, 'eb86d391', 9).
 % #define I(x, y, z) ((y) ^ ((x) | (~z)))
 % md5_transform(type, x, y, z, result).
 
-md5_transform(f, 0, 0, 0, 0).
-md5_transform(f, 0, 0, 1, 1).
-md5_transform(f, 0, 1, 0, 0).
-md5_transform(f, 0, 1, 1, 1).
-md5_transform(f, 1, 0, 0, 0).
-md5_transform(f, 1, 0, 1, 0).
-md5_transform(f, 1, 1, 0, 1).
-md5_transform(f, 1, 1, 1, 1).
-md5_transform(g, 0, 0, 0, 0).
-md5_transform(g, 0, 0, 1, 0).
-md5_transform(g, 0, 1, 0, 1).
-md5_transform(g, 0, 1, 1, 0).
-md5_transform(g, 1, 0, 0, 0).
-md5_transform(g, 1, 0, 1, 1).
-md5_transform(g, 1, 1, 0, 1).
-md5_transform(g, 1, 1, 1, 1).
-md5_transform(h, 0, 0, 0, 0).
-md5_transform(h, 0, 0, 1, 1).
-md5_transform(h, 0, 1, 0, 1).
-md5_transform(h, 0, 1, 1, 0).
-md5_transform(h, 1, 0, 0, 1).
-md5_transform(h, 1, 0, 1, 0).
-md5_transform(h, 1, 1, 0, 0).
-md5_transform(h, 1, 1, 1, 1).
-md5_transform(i, 0, 0, 0, 1).
-md5_transform(i, 0, 0, 1, 0).
-md5_transform(i, 0, 1, 0, 0).
-md5_transform(i, 0, 1, 1, 1).
-md5_transform(i, 1, 0, 0, 1).
-md5_transform(i, 1, 0, 1, 1).
-md5_transform(i, 1, 1, 0, 0).
-md5_transform(i, 1, 1, 1, 0).
+md5_transform(f, X, Y, Z, Result) :-
+	[X, Y, Z, Result] ins 0..1,
+	Result #<==> (X #/\ Y) #\/ ((#\X) #/\ Z).
+md5_transform(g, X, Y, Z, Result) :-
+	[X, Y, Z, Result] ins 0..1,
+	Result #<==> (X #/\ Z) #\/ ((#\Z) #/\ Y).
+md5_transform(h, X, Y, Z, Result) :-
+	xor(X, Y, Tmp),
+	xor(Tmp, Z, Result).
+md5_transform(i, X, Y, Z, Result) :-
+	[X, Y, Z, Result, Tmp] ins 0..1,
+	Tmp #<==> X #\/ (#\Z),
+	xor(Tmp, Y, Result).
 
 % pojedyncza transformacja - makra F, G, H, I
 md5_transform_list(Trans, [ X ], [ Y ], [ Z ], [ R ]) :- md5_transform(Trans, X, Y, Z, R).
@@ -811,23 +754,15 @@ rol_list([H|T], R) :- append(T, [H], R).
 
 dword_rotate_left(0, Input, Input).
 dword_rotate_left(C, Input, Output) :-
-	C > 0,
-	C < 32,
+	C in 1..31,
 	(   nonvar(Input)
 	->
 	divide_list(C, Input, Left, Right),
 	append(Right, Left, Output)
 	;
-	D is 32 - C,
+	D #= 32 - C,
 	divide_list(D, Output, Left, Right),
 	append(Right, Left, Input)).
-
-
-%byte_dec2bin(0, [0,0,0,0,0,0,0,0]).
-%byte_dec2bin(Decimal, Binary) :-
-%	add_list(X, [0,0,0,0,0,0,0,1], Binary, 0),
-%	byte_dec2bin(Y, X),
-%	Decimal is Y + 1.
 
 
 md5_transform_states(States, BlockStr, NewStates) :-
@@ -859,13 +794,14 @@ md5_add_states([S1,S2,S3,S4], [T1,T2,T3,T4], [O1,O2,O3,O4]) :-
 
 md5_transform_states(65, States, _, States).
 md5_transform_states(Round, [ A, B, C, D ], X, NewStates) :-
+	Round in 1..64,
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, RotValue),
 	length(X, 16),
 	nth0(Index, X, XValue),
 	conv_hex_to_dword(AC, DwordAC),
 	md5_transform_list(Trans, A, B, C, D, XValue, RotValue, DwordAC, Result),
-	NewRound is Round + 1,
+	NewRound #= Round + 1,
 	md5_transform_states(NewRound, [ D, Result, B, C ], X, NewStates).
 
 test_md5_transform_states :-
@@ -902,32 +838,25 @@ test_md5_transform_states_reverse :-
 %    InCount0, OutCount0,
 %    InCount1, OutCount1).
 md5_update(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	Index is (BitCount // 8) mod 64,
-	PartLen is 64 - Index,
+	Index #= (BitCount / 8) mod 64,
+	PartLen #= 64 - Index,
 	InputLen < PartLen,
-	NewBitCount is BitCount + InputLen * 8,
+	NewBitCount #= BitCount + InputLen * 8,
 	byte_copy(Buffer, Index, Input, InputLen, NewBuffer),
 	!.
 
 md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	Index is (BitCount // 8) mod 64,
-	PartLen is 64 - Index,
+	Index #= (BitCount / 8) mod 64,
+	PartLen #= 64 - Index,
 	InputLen >= PartLen,
-	NewBitCount is BitCount + InputLen * 8,
+	NewBitCount #= BitCount + InputLen * 8,
 	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer),
 	md5_transform_states(States, TmpBuffer, NewStates),
-	NewPartLen is PartLen * 8,
+	NewPartLen #= PartLen * 8,
 	divide_list(NewPartLen, Input, _, NewInput),
-	Len is InputLen - PartLen,
+	Len #= InputLen - PartLen,
 	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer),
 	!.
-
-md5_update_partlen_loop(PartLen, InputLen, PartLen) :-
-	PartLen >= InputLen + 63.
-md5_update_partlen_loop(PartLen, InputLen, I) :-
-	PartLen < InputLen - 63,
-	NewI is PartLen + 64,
-	md5_update_partlen_loop(NewI, InputLen, I).
 
 test_md5_update :-
 	test_md5_update_1,
@@ -973,14 +902,12 @@ test_md5_update_2 :-
 % chociaz nie powinno to powodowac zadnych dalszych problemow
 byte_copy(BitList, ByteIndex, Data, ByteLen, NewBuffer) :-
 	(   nonvar(BitList) ->
-	Index is ByteIndex * 8,
-	Len is ByteLen * 8,
+	Index #= ByteIndex * 8,
+	Len #= ByteLen * 8,
 	    buffer(BitList, Index, Data, Len, NewBuffer)
 	;   buffer(BitList, Index, Data, Len, NewBuffer),
-	    ByteIndex is Index / 8,
-	    ByteLen is Len / 8,
-	    integer(ByteIndex),
-	    integer(ByteLen)
+	    ByteIndex #= Index / 8,
+	    ByteLen #= Len / 8
 	).
 
 
@@ -1036,6 +963,7 @@ addx :-
 	not_list(B, NotB),
 	and_list(NotA, NotB, PossibleC),
 	print('CP = '), print(PossibleC), nl.
+
 
 
 
