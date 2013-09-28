@@ -1,3 +1,8 @@
+% md5
+% wersja 1 - prolog bez CLP, implementacja raczej niepelna relacja
+% wersja 2 - prolog z CLP, pelne relacje, ale trudne etykietowanie
+% wersja 3 - dalsze zmiany w logice
+
 start :-
 	use_module(library(clpfd)).
 
@@ -150,11 +155,10 @@ md5(MsgStr, Digest) :-
 	maplist(=(0), Buffer),
 
 	% convert message to specially prepared list of bits
-	decode_string_align(MsgStr, ByteList, ByteLength),
-	append(ByteList, BitList),
+	decode_string_align(MsgStr, ByteList, Length),
 
 	% process message
-	md5_update(States, NewStates, Buffer, NewBuffer, BitList, ByteLength, 0, NewBitCount), % true rel
+	md5_update(States, NewStates, Buffer, NewBuffer, ByteList, Length, 0, NewBitCount), % true rel
 	md5_final(NewStates, NewBuffer, NewBitCount, Digest). % true rel
 test_md5_label :-
 	md5(M, D),
@@ -186,13 +190,13 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	byte_dec2bin(HighBitCount, HighByte),
 	byte_dec2bin(LowBitCount, LowByte),
 	Z = [0,0,0,0,0,0,0,0],
-	append([LowByte,HighByte,Z,Z, Z,Z,Z,Z], Bits), % length(Bits, 64).
-	length(Padding, 511), % it is 511 and not 512 because later a leading '1' is added
-	maplist(=(0), Padding),
+	Bits = [LowByte,HighByte,Z,Z, Z,Z,Z,Z],
+	length(Padding, 63), % one byte to be added later
+	maplist(=(Z), Padding),
 	Index in 0..63,
 	Index #= (BitCount / 8) mod 64,
 	md5_final_padlen(Index, PadLen), % PadLen in 1..64
-	md5_update(States, NewStates, Buffer, NewBuffer, [ 1 | Padding ], PadLen, BitCount, NewBC), % true rel
+	md5_update(States, NewStates, Buffer, NewBuffer, [[1,0,0,0, 0,0,0,0] | Padding], PadLen, BitCount, NewBC), % true rel
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
 
 print_states([S0, S1, S2, S3]) :-
@@ -502,11 +506,12 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
 %
 % Prawdziwa relacja!
 
-md5_update(States, NewStates, Buffer, NewBuffer, InputBits, InputByteLen, BitCount, NewBitCount) :-
+md5_update(States, NewStates, Buffer, NewBuffer, InputBytes, InputByteLen, BitCount, NewBitCount) :-
 	maplist(domain(states), [States, NewStates]),
 	maplist(domain(buffer), [Buffer, NewBuffer]),
+	% TO DO: domena dla InputBytes
 	[BitCount, NewBitCount] ins 0..512, % 512 czy 511?
-	md5_update0(States, NewStates, Buffer, NewBuffer, InputBits, InputByteLen, BitCount, NewBitCount).
+	md5_update0(States, NewStates, Buffer, NewBuffer, InputBytes, InputByteLen, BitCount, NewBitCount).
 md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
 	Index in 0..63,
 	PartLen in 1..64,
@@ -525,17 +530,16 @@ md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, New
 	NewBitCount #= BitCount + InputLen * 8,
 	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer), % true rel
 	md5_transform_states(States, TmpBuffer, NewStates), % true rel
-	IgnoreLen #= PartLen * 8,
-	label([IgnoreLen]),
-	length(Ignore, IgnoreLen),
+	label([PartLen]),
+	length(Ignore, PartLen),
 	append(Ignore, NewInput, Input),
 	Len #= InputLen - PartLen,
 	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer), % true rel
 	!.
 test_md5_update :-
 	test_md5_update_1,
-	test_md5_update_1_reverse,
-	test_md5_update_2.
+	test_md5_update_1_reverse.
+	%test_md5_update_2.
 test_md5_update_label :-
 	md5_update(S, NS, B, NB, I, IL, BC, NBC),
 	maplist(label, S), maplist(label, NS), label(B), label(NB), label(I), label([IL, BC, NBC]).
@@ -544,18 +548,20 @@ test_md5_update_label_2 :-
 	label([IL, BC, NBC]), label(I), label(NB), label(B), maplist(label, NS), maplist(label, S).
 test_md5_update_1 :-
 	char_to_dword('TEST', Test),
+	bits_to_bytes(Test, BTest),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
-	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32).
+	md5_update(_, _, Buffer, NewBuffer, BTest, 4, 0, 32).
 % niedoskonaly test
 % sprawdza tylko dzialanie odwrotne dla braku bufora
 % a nie sprawdza dzialania przy braku licznikow
 test_md5_update_1_reverse :-
 	char_to_dword('TEST', Test),
+	bits_to_bytes(Test, BTest),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
-	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32),
+	md5_update(_, _, Buffer, NewBuffer, BTest, 4, 0, 32),
 	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer).
 test_md5_update_2 :-
 	md5_init(States),
@@ -571,15 +577,21 @@ test_md5_update_2 :-
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
 	conv_hex_to_dword('bf355ec9', S3).
-byte_copy(BitList, ByteIndex, Data, ByteLen, NewBuffer) :-
+bits_to_bytes([], []).
+bits_to_bytes([ A,B,C,D,E,F,G,H | BitList ], [ [A,B,C,D,E,F,G,H] | ByteList ]) :-
+	bits_to_bytes(BitList, ByteList).
+
+byte_copy(BitList, ByteIndex, ByteData, ByteLen, NewBuffer) :-
 	[ByteIndex, ByteLen] ins 0..63,
+
 	maplist(domain(buffer), [BitList, NewBuffer]),
-	(   var(Data) -> TrueDataLen in 0..63, TrueDataLen #>= ByteLen,	label([TrueDataLen]), length(Data, TrueDataLen)
-	;	length(Data, TrueDataLen), TrueDataLen #>= ByteLen),
-	Index #= ByteIndex * 8,
-	Len #= ByteLen * 8,
-	label([ByteIndex, ByteLen, Index, Len]),
-	foldl(buffer(Index, Data, Len), BitList, NewBuffer, 0, _).
+
+	bits_to_bytes(BitList, ByteList),
+	(   var(ByteData) -> TrueDataLen in 0..63, TrueDataLen #>= ByteLen, label([TrueDataLen]), length(ByteData, TrueDataLen)
+	;	length(ByteData, TrueDataLen), TrueDataLen #>= ByteLen),
+	label([ByteIndex, ByteLen]),
+	foldl(buffer(ByteIndex, ByteData, ByteLen), ByteList, ByteBuffer, 0, _),
+	bits_to_bytes(NewBuffer, ByteBuffer).
 buffer(Index, _, _, Value, Value, Position, NewPosition) :-
 	Position < Index,
 	NewPosition is Position + 1.
@@ -597,14 +609,17 @@ test_buffer :-
 	X = [1,0,1,1,1].
 test_byte_copy :-
 	conv_hex_to_dword('00000000', Zs),
-	conv_hex_to_dword('80000000', Temp),
+	conv_hex_to_dword('80000000', Temp), % trzeba zamienic na bajty!
 	conv_hex_to_dword('20000000', Bits),
-	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,  Zs,Zs], Buffer),
-	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Bits,Zs], NewBuffer),
-	byte_copy(Buffer, 56, Bits, 4, NewBuffer),
-	byte_copy(Buffer, 56, Bits, T1, NewBuffer), T1 = 4,
-	byte_copy(Buffer, T2, Bits, T1, NewBuffer), T2 = 56,
-	byte_copy(Buffer, T2, T3, T1, NewBuffer), T3 = Bits,
+	Z = [0,0,0,0, 0,0,0,0],
+
+	append([Temp,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,  Zs,Zs], Buffer),
+	append([Temp,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Bits,Zs], NewBuffer),
+	!,
+	byte_copy(Buffer, 56, [[0,0,1,0, 0,0,0,0],Z,Z,Z], 4, NewBuffer),
+	byte_copy(Buffer, 56, [[0,0,1,0, 0,0,0,0],Z,Z,Z], T1, NewBuffer), T1 = 4,
+	byte_copy(Buffer, T2, [[0,0,1,0, 0,0,0,0],Z,Z,Z], T1, NewBuffer), T2 = 56,
+	byte_copy(Buffer, T2, T3, T1, NewBuffer), T3 = [[0,0,1,0, 0,0,0,0],Z,Z,Z],
 	byte_copy(T4, T2, T3, T1, NewBuffer), T4 = Buffer.
 test_byte_copy_label :-
 	byte_copy(A, B, C, D, E),
