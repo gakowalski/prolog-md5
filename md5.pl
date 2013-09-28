@@ -123,9 +123,12 @@ run_tests :-
 
 run_test(Test) :- print(Test), nl, call(Test), !.
 
+domain(byte, Byte) :-
+	length(Byte, 8),
+	Byte ins 0..1.
 domain(buffer, Buffer) :-
-	length(Buffer, 512),
-	Buffer ins 0..1.
+	length(Buffer, 64),
+	maplist(domain(byte), Buffer).
 domain(dword, Dword) :-
 	length(Dword, 32),
 	Dword ins 0..1.
@@ -151,8 +154,8 @@ md5(MsgStr, Digest) :-
 
 	% creating some constants
 	md5_init(States),
-	length(Buffer, 512),
-	maplist(=(0), Buffer),
+	length(Buffer, 64),
+	maplist(=([0,0,0,0, 0,0,0,0]), Buffer),
 
 	% convert message to specially prepared list of bits
 	decode_string_align(MsgStr, ByteList, Length),
@@ -260,20 +263,6 @@ md5_init([ S0, S1, S2, S3 ]) :-
 	conv_hex_to_dword( 'efcdab89' , S1 ),
 	conv_hex_to_dword( '98badcfe' , S2 ),
 	conv_hex_to_dword( '10325476' , S3 ).
-
-% true rel
-decode_list([], []).
-decode_list(List, [ Dword | ListDwords ]) :-
-	length(Dword, 32),
-	Dword ins 0..1,
-	append(Dword, NewList, List),
-	decode_list(NewList, ListDwords).
-
-test_decode_list :-
-	conv_hex_to_dword('01010101', A),
-	conv_hex_to_dword('20202020', B),
-	append([A,B],Test),
-	decode_list(Test, [A,B]).
 
 char_to_dword(String, Dword) :-
 	%string_length(String, Length),
@@ -423,7 +412,6 @@ md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	label([S]),
 	dword_rotate_left(S, Sum, Rotated),
 	add_list(Rotated, B, Result, _).
-
 % dword_rotate_left/4
 % dword_rotate_left(C, InputList, OutputList)
 % Prawdziwa relacja: OutputList to InputList o C obroconych elementow
@@ -441,45 +429,26 @@ dword_rotate_left(C, Input, Output) :-
 	Right ins 0..1,
 	append(Left, Right, Input),
 	append(Right, Left, Output).
+md5_bytes_to_dwords([], []).
+md5_bytes_to_dwords([B3,B2,B1,B0 | Bytes], [Dword | Dwords]) :-
+	append([B0, B1, B2, B3], Dword),
+	md5_bytes_to_dwords(Bytes, Dwords).
+% md5_transform_states/3
 % prawdziwa relacja
-md5_transform_states(States, BlockStr, NewStates) :-
-        decode_list(BlockStr, X),
-	md5_reverse_dwordlist(X, Y),
-	md5_transform_states_decoded(States, Y, NewStates).
+% TRUE RELATION!
+% States = stany inicjalne
+% Bytes = kodowany komunikat
+% NewStates = stany koncowe
+md5_transform_states(States, Bytes, NewStates) :-
+	maplist(domain(states), [States, NewStates]),
+	% TO DO: domena dla Bytes
+	md5_bytes_to_dwords(Bytes, Dwords),
+	md5_transform_states(1, States, Dwords, Result),
+	md5_add_states(States, Result, NewStates).
 test_md5_transform_states_label :-
 	md5_transform_states(S, BS, NS),
 	maplist(label, S),
 	label(BS),
-	maplist(label, NS).
-% prawdziwa relacja
-md5_reverse_dwordlist([], []).
-md5_reverse_dwordlist([ Dword | DwordList ], [ R | Reversed ]) :-
-	md5_reverse_dword(Dword, R),
-	md5_reverse_dwordlist( DwordList, Reversed ).
-% md5_reverse_dword/2
-% Prawdziwa relacja: Reversed to Dword z odwrotnym porzadkiem bajtow.
-md5_reverse_dword(Dword, Reversed) :-
-	maplist(domain(dword), [Dword, Reversed]),
-	length(B0, 8),
-	length(B1, 8),
-	length(B2, 8),
-	length(B3, 8),
-	append([B0, B1, B2, B3], Dword),
-	append([B3, B2, B1, B0], Reversed).
-% md5_transform_states_decoded/3
-% TRUE RELATION!
-% States = stany inicjalne
-% Dwords = kodowany komunikat
-% NewStates = stany koncowe
-md5_transform_states_decoded(States, Dwords, NewStates) :-
-	maplist(domain(states), [States, NewStates]),
-	maplist(domain(dword), Dwords),
-	md5_transform_states(1, States, Dwords, Result),
-	md5_add_states(States, Result, NewStates).
-test_md5_transform_states_decoded_label :-
-	md5_transform_states_decoded(S, D, NS),
-	maplist(label, S),
-	maplist(label, D),
 	maplist(label, NS).
 md5_add_states([S1,S2,S3,S4], [T1,T2,T3,T4], [O1,O2,O3,O4]) :-
 	add_list(S1, T1, O1, _),
@@ -552,7 +521,9 @@ test_md5_update_1 :-
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
-	md5_update(_, _, Buffer, NewBuffer, BTest, 4, 0, 32).
+	bits_to_bytes(Buffer, B1),
+	bits_to_bytes(NewBuffer, B2),
+	md5_update(_, _, B1, B2, BTest, 4, 0, 32).
 % niedoskonaly test
 % sprawdza tylko dzialanie odwrotne dla braku bufora
 % a nie sprawdza dzialania przy braku licznikow
@@ -561,8 +532,10 @@ test_md5_update_1_reverse :-
 	bits_to_bytes(Test, BTest),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
-	md5_update(_, _, Buffer, NewBuffer, BTest, 4, 0, 32),
-	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer).
+	bits_to_bytes(NewBuffer, B2),
+	md5_update(_, _, B1, B2, BTest, 4, 0, 32),
+	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
+	bits_to_bytes(Buffer, B1).
 test_md5_update_2 :-
 	md5_init(States),
 	char_to_dword('TSET', Test),
@@ -581,17 +554,13 @@ bits_to_bytes([], []).
 bits_to_bytes([ A,B,C,D,E,F,G,H | BitList ], [ [A,B,C,D,E,F,G,H] | ByteList ]) :-
 	bits_to_bytes(BitList, ByteList).
 
-byte_copy(BitList, ByteIndex, ByteData, ByteLen, NewBuffer) :-
+byte_copy(ByteList, ByteIndex, ByteData, ByteLen, NewBuffer) :-
 	[ByteIndex, ByteLen] ins 0..63,
-
-	maplist(domain(buffer), [BitList, NewBuffer]),
-
-	bits_to_bytes(BitList, ByteList),
+	maplist(domain(buffer), [ByteList, NewBuffer]),
 	(   var(ByteData) -> TrueDataLen in 0..63, TrueDataLen #>= ByteLen, label([TrueDataLen]), length(ByteData, TrueDataLen)
 	;	length(ByteData, TrueDataLen), TrueDataLen #>= ByteLen),
 	label([ByteIndex, ByteLen]),
-	foldl(buffer(ByteIndex, ByteData, ByteLen), ByteList, ByteBuffer, 0, _),
-	bits_to_bytes(NewBuffer, ByteBuffer).
+	foldl(buffer(ByteIndex, ByteData, ByteLen), ByteList, NewBuffer, 0, _).
 buffer(Index, _, _, Value, Value, Position, NewPosition) :-
 	Position < Index,
 	NewPosition is Position + 1.
