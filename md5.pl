@@ -1,18 +1,6 @@
 start :-
 	use_module(library(clpfd)).
 
-and(A, B, Result) :-
-	[A, B, Result] ins 0..1,
-	A #/\ B #<==> Result.
-or(A, B, Result) :-
-	[A, B, Result] ins 0..1,
-	A #\/ B #<==> Result.
-xor(A, B, Result) :-
-	[A, B, Result] ins 0..1,
-	Result #= (A + B) mod 2.
-not(A, Result) :-
-	[A, Result] ins 0..1,
-	#\ A #<==> Result.
 % add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
 add(A, B, S, C) :-
 	[A, B, S, C] ins 0..1,
@@ -29,15 +17,6 @@ add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
 add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
 	add(A, B, Prev, S, C),
 	add_list(AT, BT, ST, Prev).
-% true relation
-and_list(X,Y,Z) :-
-	maplist(and, X, Y, Z).
-or_list(X,Y,Z) :-
-	maplist(or, X, Y, Z).
-xor_list(X,Y,Z) :-
-	maplist(xor, X, Y, Z).
-not_list(X,Y) :-
-	maplist(not, X, Y).
 % hex_digit(digit, char_code, bit_list)
 % cyfry
 hex_digit(D, CC, [B3,B2,B1,B0]) :-
@@ -45,30 +24,21 @@ hex_digit(D, CC, [B3,B2,B1,B0]) :-
 	CC in 48..57,
 	[B3,B2,B1,B0] ins 0..1,
 	CC #= D + 48,
-	B0 #= D mod 2,
-	B1 #= (D / 2) mod 2,
-	B2 #= (D / 4) mod 2,
-	B3 #= (D / 8) mod 2.
+	scalar_product([8,4,2,1], [B3,B2,B1,B0], #=, D).
 % duze litery
 hex_digit(D, CC, [B3,B2,B1,B0]) :-
 	D in 10..15,
 	CC in 65..70,
 	[B3,B2,B1,B0] ins 0..1,
 	CC #= D + 55,
-	B0 #= D mod 2,
-	B1 #= (D / 2) mod 2,
-	B2 #= (D / 4) mod 2,
-	B3 #= (D / 8) mod 2.
+	scalar_product([8,4,2,1], [B3,B2,B1,B0], #=, D).
 % male litery
 hex_digit(D, CC, [B3,B2,B1,B0]) :-
 	D in 10..15,
 	CC in 97..102,
 	[B3,B2,B1,B0] ins 0..1,
 	CC #= D + 87,
-	B0 #= D mod 2,
-	B1 #= (D / 2) mod 2,
-	B2 #= (D / 4) mod 2,
-	B3 #= (D / 8) mod 2.
+	scalar_product([8,4,2,1], [B3,B2,B1,B0], #=, D).
 % byte_dec2bin/2
 % byte_dec2bin(Decimal, Binary)
 % Pelna relacja.
@@ -77,15 +47,7 @@ hex_digit(D, CC, [B3,B2,B1,B0]) :-
 byte_dec2bin(Dec, [B7,B6,B5,B4,B3,B2,B1,B0]) :-
 	[B7,B6,B5,B4,B3,B2,B1,B0] ins 0..1,
 	Dec in 0..255,
-	B0 #= Dec mod 2,
-	B1 #= (Dec / 2) mod 2,
-	B2 #= (Dec / 4) mod 2,
-	B3 #= (Dec / 8) mod 2,
-	B4 #= (Dec / 16) mod 2,
-	B5 #= (Dec / 32) mod 2,
-	B6 #= (Dec / 64) mod 2,
-	B7 #= (Dec / 128) mod 2.
-
+        scalar_product([128,64,32,16,8,4,2,1], [B7,B6,B5,B4,B3,B2,B1,B0], #=, Dec).
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
 test_byte_dec2bin :-
@@ -177,15 +139,22 @@ domain(states, [S0, S1, S2, S3]) :-
 % MsgStr - lista kodow znakowych, np. "Test"
 % Digest - Wynik
 md5(MsgStr, Digest) :-
+	% domain declarations
 	domain(states, Digest),
 	Length in 0..56,
 	length(MsgStr, Length),
-	decode_string_align(MsgStr, ByteList, Length),
-	append(ByteList, BitList),
+
+	% creating some constants
 	md5_init(States),
-	conv_hex_to_dword('00000000', Zs),
-	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer), % length(Buffer, 512).
-	md5_update(States, NewStates, Buffer, NewBuffer, BitList, Length, 0, NewBitCount), % true rel
+	length(Buffer, 512),
+	maplist(=(0), Buffer),
+
+	% convert message to specially prepared list of bits
+	decode_string_align(MsgStr, ByteList, ByteLength),
+	append(ByteList, BitList),
+
+	% process message
+	md5_update(States, NewStates, Buffer, NewBuffer, BitList, ByteLength, 0, NewBitCount), % true rel
 	md5_final(NewStates, NewBuffer, NewBitCount, Digest). % true rel
 test_md5_label :-
 	md5(M, D),
@@ -218,13 +187,12 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	byte_dec2bin(LowBitCount, LowByte),
 	Z = [0,0,0,0,0,0,0,0],
 	append([LowByte,HighByte,Z,Z, Z,Z,Z,Z], Bits), % length(Bits, 64).
-	conv_hex_to_dword('00000000', Zs),
-	conv_hex_to_dword('80000000', PaddingStart),
-	append([PaddingStart,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Padding), % length(Padding, 128).
+	length(Padding, 511), % it is 511 and not 512 because later a leading '1' is added
+	maplist(=(0), Padding),
 	Index in 0..63,
 	Index #= (BitCount / 8) mod 64,
 	md5_final_padlen(Index, PadLen), % PadLen in 1..64
-	md5_update(States, NewStates, Buffer, NewBuffer, Padding, PadLen, BitCount, NewBC), % true rel
+	md5_update(States, NewStates, Buffer, NewBuffer, [ 1 | Padding ], PadLen, BitCount, NewBC), % true rel
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
 
 print_states([S0, S1, S2, S3]) :-
@@ -287,8 +255,7 @@ md5_init([ S0, S1, S2, S3 ]) :-
 	conv_hex_to_dword( '67452301' , S0 ),
 	conv_hex_to_dword( 'efcdab89' , S1 ),
 	conv_hex_to_dword( '98badcfe' , S2 ),
-	conv_hex_to_dword( '10325476' , S3 ),
-	!.
+	conv_hex_to_dword( '10325476' , S3 ).
 
 % true rel
 decode_list([], []).
@@ -525,6 +492,7 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
 	md5_transform_list(Trans, A, B, C, D, XValue, RotValue, DwordAC, Result),
 	NewRound is Round + 1,
 	md5_transform_states(NewRound, [ D, Result, B, C ], Dwords, NewStates).
+
 % md5_update(
 %    States, NewStates,
 %    Buffer, NewBuffer,
@@ -534,11 +502,11 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
 %
 % Prawdziwa relacja!
 
-md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+md5_update(States, NewStates, Buffer, NewBuffer, InputBits, InputByteLen, BitCount, NewBitCount) :-
 	maplist(domain(states), [States, NewStates]),
 	maplist(domain(buffer), [Buffer, NewBuffer]),
 	[BitCount, NewBitCount] ins 0..512, % 512 czy 511?
-	md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount).
+	md5_update0(States, NewStates, Buffer, NewBuffer, InputBits, InputByteLen, BitCount, NewBitCount).
 md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
 	Index in 0..63,
 	PartLen in 1..64,
@@ -742,19 +710,21 @@ test_md5_transform_states_reverse :-
 	%label(DwordList),
 	%print(DwordList).
 	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs].
-test_output(_Output) :-
+test_output(Output) :-
 	md5_init(States),
 	conv_hex_to_dword('4bd93b03', S0),
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
 	conv_hex_to_dword('bf355ec9', S3),
 	md5_transform_states_decoded(States, DwordList, [S0,S1,S2,S3]),
-	char_to_dword('TEST', Test),
+	char_to_dword('TEST', _Test),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	conv_hex_to_dword('00000080', One), % terminator tekstu
 	conv_hex_to_dword('00000020', Two), % 32 bity slowa 'TEST'
+
 	%maplist(label, DwordList),
-	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs].
+	%DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs].
+	DwordList = [Output,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs].
 	%Output = DwordList.
 test_md5_transform_list :-
 	Trans = f,
