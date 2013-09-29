@@ -53,6 +53,15 @@ byte_dec2bin(Dec, [B7,B6,B5,B4,B3,B2,B1,B0]) :-
 	[B7,B6,B5,B4,B3,B2,B1,B0] ins 0..1,
 	Dec in 0..255,
         scalar_product([128,64,32,16,8,4,2,1], [B7,B6,B5,B4,B3,B2,B1,B0], #=, Dec).
+
+dword_dec2bin(Dec, Dword) :-
+	domain(dword, Dword),
+	Dec in 0..4294967295,
+	Positions = [2147483648, 1073741824, 536870912, 268435456, 134217728, 67108864, 33554432, 16777216, 8388608,
+		    4194304, 2097152, 1048576, 524288, 262144, 131072, 65536, 32768, 16384, 8192, 4096, 2048, 1024,
+		    512, 256, 128, 64, 32, 16, 8, 4, 2 ,1],
+	scalar_product(Positions, Dword, #=, Dec).
+
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
 test_byte_dec2bin :-
@@ -124,11 +133,10 @@ run_tests :-
 run_test(Test) :- print(Test), nl, call(Test), !.
 
 domain(byte, Byte) :-
-	length(Byte, 8),
-	Byte ins 0..1.
+	Byte ins 0..255.
 domain(buffer, Buffer) :-
 	length(Buffer, 64),
-	maplist(domain(byte), Buffer).
+	Buffer ins 0..255.
 domain(dword, Dword) :-
 	length(Dword, 32),
 	Dword ins 0..1.
@@ -154,14 +162,14 @@ md5(MsgStr, Digest) :-
 
 	% creating some constants
 	md5_init(States),
-	length(Buffer, 64),
-	maplist(=([0,0,0,0, 0,0,0,0]), Buffer),
+	domain(buffer, Buffer),
+	maplist(=(0), Buffer),
 
-	% convert message to specially prepared list of bits
-	decode_string_align(MsgStr, ByteList, Length),
+	% add padding zeros
+	dword_align(MsgStr, Aligned, Length),
 
 	% process message
-	md5_update(States, NewStates, Buffer, NewBuffer, ByteList, Length, 0, NewBitCount), % true rel
+	md5_update(States, NewStates, Buffer, NewBuffer, Aligned, Length, 0, NewBitCount), % true rel
 	md5_final(NewStates, NewBuffer, NewBitCount, Digest). % true rel
 test_md5_label :-
 	md5(M, D),
@@ -190,16 +198,13 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	HighBitCount #= BitCount / 256,
 	LowBitCount in 0..255,
 	LowBitCount #= BitCount mod 256,
-	byte_dec2bin(HighBitCount, HighByte),
-	byte_dec2bin(LowBitCount, LowByte),
-	Z = [0,0,0,0,0,0,0,0],
-	Bits = [LowByte,HighByte,Z,Z, Z,Z,Z,Z],
+	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
 	length(Padding, 63), % one byte to be added later
-	maplist(=(Z), Padding),
+	maplist(=(0), Padding),
 	Index in 0..63,
 	Index #= (BitCount / 8) mod 64,
 	md5_final_padlen(Index, PadLen), % PadLen in 1..64
-	md5_update(States, NewStates, Buffer, NewBuffer, [[1,0,0,0, 0,0,0,0] | Padding], PadLen, BitCount, NewBC), % true rel
+	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, BitCount, NewBC), % true rel
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
 
 print_states([S0, S1, S2, S3]) :-
@@ -249,14 +254,14 @@ md5_final_padlen(Index, PadLen) :-
 	PadLen in 57..64,
 	PadLen #= 120 - Index.
 
-decode_string_align(CharList, ByteList, Length) :-
-	maplist(byte_dec2bin, CharList, BL),
+dword_align(Input, Output, Length) :-
+	% dodac domeny dla wszystkich argumentow
 	PaddingLen in 0..24,
 	PaddingLen #= ((4 - Length mod 4) mod 4),
 	label([PaddingLen]),
 	length(Padding, PaddingLen),
-	maplist(=([0,0,0,0,0,0,0,0]), Padding),
-	append(BL, Padding, ByteList).
+	maplist(=(0), Padding),
+	append(Input, Padding, Output).
 
 md5_init([ S0, S1, S2, S3 ]) :-
 	conv_hex_to_dword( '67452301' , S0 ),
@@ -390,47 +395,29 @@ md5_transform(i, X, Y, Z, Result) :-
 	Result #= (Tmp + Y) mod 2.
 md5_transform_list(Trans,X,Y,Z,R) :-
 	maplist(md5_transform(Trans), X, Y, Z, R).
-
-add(A, B, C, D, PC2, PC1, S2, S1, S0) :-
-	[A, B, C, D, PC2, PC1, S2, S1, S0] ins 0..1,
-	Sum #= A + B + C + D + 2*PC2 + PC1,
-	S0 #= Sum mod 2,
-	S1 #= (Sum / 2) mod 2,
-	S2 #= Sum / 4.
-
-add_list( [ I1 ], [ I2 ], [ I3 ], [ I4 ], C1, C2, [ S ]) :- add(I1, I2, I3, I4, 0, 0, C1, C2, S).
-add_list( [ I1 | L1 ], [ I2 | L2 ], [ I3 | L3 ], [ I4 | L4 ], C1, C2, [ S | ST ]) :-
-	add(I1, I2, I3, I4, PC1, PC2, C1, C2, S),
-	add_list(L1, L2, L3, L4, PC1, PC2, ST).
-
 md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	S in 0..31,
 	maplist(domain(dword),[A,B,C,D,X,AC,Result]),
 	md5_transform(Trans),
 	md5_transform_list(Trans, B, C, D, F),
-	add_list(A, F, X, AC, _, _, Sum),
-	label([S]),
-	dword_rotate_left(S, Sum, Rotated),
-	add_list(Rotated, B, Result, _).
-% dword_rotate_left/4
-% dword_rotate_left(C, InputList, OutputList)
-% Prawdziwa relacja: OutputList to InputList o C obroconych elementow
-dword_rotate_left(C, Input, Output) :-
-	length(Input, 32),
-	length(Output, 32),
-	Input ins 0..1,
-	Output ins 0..1,
-	C in 0..32,
-	D #= 32 - C,
-	label([C, D]),
-	length(Left, C),
-	length(Right, D),
-	Left ins 0..1,
-	Right ins 0..1,
-	append(Left, Right, Input),
-	append(Right, Left, Output).
+
+	dword_dec2bin(ADec, A),
+	dword_dec2bin(BDec, B),
+	dword_dec2bin(FDec, F),
+	dword_dec2bin(XDec, X),
+	dword_dec2bin(ACDec, AC),
+
+	Sum #= (ADec + FDec + XDec + ACDec) mod 4294967296,
+
+	S2 #= 32 - S,
+	label([S, S2]),
+	Rotated #= (Sum * 2^S) mod 4294967296 + (Sum / 2^S2), % rotate left S times
+	ResultDec #= (Rotated + BDec) mod 4294967296,
+
+	dword_dec2bin(ResultDec, Result).
 md5_bytes_to_dwords([], []).
-md5_bytes_to_dwords([B3,B2,B1,B0 | Bytes], [Dword | Dwords]) :-
+md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
+	maplist(byte_dec2bin, [D3,D2,D1,D0], [B3,B2,B1,B0]),
 	append([B0, B1, B2, B3], Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
 % md5_transform_states/3
@@ -553,7 +540,6 @@ test_md5_update_2 :-
 bits_to_bytes([], []).
 bits_to_bytes([ A,B,C,D,E,F,G,H | BitList ], [ [A,B,C,D,E,F,G,H] | ByteList ]) :-
 	bits_to_bytes(BitList, ByteList).
-
 byte_copy(ByteList, ByteIndex, ByteData, ByteLen, NewBuffer) :-
 	[ByteIndex, ByteLen] ins 0..63,
 	maplist(domain(buffer), [ByteList, NewBuffer]),
