@@ -6,11 +6,23 @@
 start :-
 	use_module(library(clpfd)).
 
-dword_dec2bin(Dec, Dword) :-
+o_dword_dec2bin(Dec, Dword) :-
 	length(Dword, 16),
 	Dword ins 0..3,
 	Dec in 0..4294967295,
 	Positions = [1073741824, 268435456, 67108864, 16777216, 4194304, 1048576, 262144, 65536, 16384, 4096, 1024, 256, 64, 16, 4, 1],
+	scalar_product(Positions, Dword, #=, Dec).
+o2_dword_dec2bin(Dec, Dword) :-
+	length(Dword, 11),
+	Dword ins 0..7,
+	Dec in 0..4294967295,
+	Positions = [1073741824, 134217728, 16777216, 2097152, 262144, 32768, 4096, 512, 64, 8, 1],
+	scalar_product(Positions, Dword, #=, Dec).
+dword_dec2bin(Dec, Dword) :-
+	length(Dword, 8),
+	Dword ins 0..15,
+	Dec in 0..4294967295,
+	Positions = [268435456, 16777216, 1048576, 65536, 4096, 256, 16, 1],
 	scalar_product(Positions, Dword, #=, Dec).
 dword_and(A, B, And) :-
 	And #=< A,
@@ -19,8 +31,22 @@ dword_and(A, B, And) :-
 	dword_dec2bin(B, BD),
 	dword_dec2bin(And, AndD),
 	maplist(dword_and0, AD, BD, AndD).
-a_dword_and0(A, B, And) :- And #= min(A,B) + (A*B*(A-3)*(B-3)*((A-1)*(B-2)+(A-2)*(B-1)))/4.
 dword_and0(A, B, And) :-
+	dword_xor0(A, B, Xor),
+	And #= (A + B - Xor)/2.
+dword_xor0(A, B, Xor) :-
+	X #= A / 4, % important: integer division!
+	Y #= B / 4,
+	Xor #= ((A + B*((-1)^A)) mod 4) + 4*((X + Y*((-1)^X)) mod 4).
+z_dword_xor0(A, B, Xor) :-
+	X #= A / 4, % important: integer division!
+	Y #= B / 4,
+	Xor #= ((A + B*((-1)^A)) mod 4) + 4*(X+Y) - 8*X*Y.
+%=MOD($C24+D$23*(-1)^$C24;4)+
+%4*MOD(LICZBA.CA£K($C24/4)+
+%LICZBA.CA£K(D$23/4)*(-1)^(LICZBA.CA£K($C24/4));4)
+a_dword_and0(A, B, And) :- And #= min(A,B) + (A*B*(A-3)*(B-3)*((A-1)*(B-2)+(A-2)*(B-1)))/4.
+x_dword_and0(A, B, And) :-
 	AB #= A * B,
 	Tmp #= 3*A + 3*B,
 	And #= min(A,B) + (2*AB^3 - (3*Tmp-22)*AB^2 + (36-13*Tmp+Tmp^2)*AB)/4.
@@ -28,6 +54,8 @@ dword_and0(A, B, And) :-
 	%And #= min(A,B) + (AB*((2*AB-Tmp)*(AB-Tmp)+4*(AB-Tmp)+9*(2*AB-Tmp)+36))/4.
 b_dword_and0(A, B, And) :- And #= (A+B-abs(A-B))/2 + (A*B*(A-3)*(B-3)*((A-1)*(B-2)+(A-2)*(B-1)))/4.
 dword_or(A, B, Or) :-
+	Or #>= A,
+	Or #>= B,
 	dword_and(A, B, And),
 	Or #= A + B - And.
 dword_xor(A, B, Xor) :-
