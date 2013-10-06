@@ -6,67 +6,80 @@
 start :-
 	use_module(library(clpfd)).
 
-o_dword_dec2bin(Dec, Dword) :-
-	length(Dword, 16),
-	Dword ins 0..3,
-	Dec in 0..4294967295,
-	Positions = [1073741824, 268435456, 67108864, 16777216, 4194304, 1048576, 262144, 65536, 16384, 4096, 1024, 256, 64, 16, 4, 1],
-	scalar_product(Positions, Dword, #=, Dec).
-o2_dword_dec2bin(Dec, Dword) :-
-	length(Dword, 11),
-	Dword ins 0..7,
-	Dec in 0..4294967295,
-	Positions = [1073741824, 134217728, 16777216, 2097152, 262144, 32768, 4096, 512, 64, 8, 1],
-	scalar_product(Positions, Dword, #=, Dec).
 dword_dec2bin(Dec, Dword) :-
-	length(Dword, 8),
-	Dword ins 0..15,
+	length(Dword, 4),
+	Dword ins 0..255,
 	Dec in 0..4294967295,
-	Positions = [268435456, 16777216, 1048576, 65536, 4096, 256, 16, 1],
+	Positions = [16777216, 65536, 256, 1],
 	scalar_product(Positions, Dword, #=, Dec).
 dword_and(A, B, And) :-
 	And #=< A,
 	And #=< B,
-	dword_dec2bin(A, AD),
-	dword_dec2bin(B, BD),
-	dword_dec2bin(And, AndD),
-	maplist(dword_and0, AD, BD, AndD).
-dword_and0(A, B, And) :-
-	dword_xor0(A, B, Xor),
+	dword_xor(A, B, Xor),
 	And #= (A + B - Xor)/2.
 dword_xor0(A, B, Xor) :-
 	X #= A / 4, % important: integer division!
 	Y #= B / 4,
-	Xor #= ((A + B*((-1)^A)) mod 4) + 4*((X + Y*((-1)^X)) mod 4).
-z_dword_xor0(A, B, Xor) :-
-	X #= A / 4, % important: integer division!
-	Y #= B / 4,
-	Xor #= ((A + B*((-1)^A)) mod 4) + 4*(X+Y) - 8*X*Y.
-%=MOD($C24+D$23*(-1)^$C24;4)+
-%4*MOD(LICZBA.CA£K($C24/4)+
-%LICZBA.CA£K(D$23/4)*(-1)^(LICZBA.CA£K($C24/4));4)
-a_dword_and0(A, B, And) :- And #= min(A,B) + (A*B*(A-3)*(B-3)*((A-1)*(B-2)+(A-2)*(B-1)))/4.
-x_dword_and0(A, B, And) :-
-	AB #= A * B,
-	Tmp #= 3*A + 3*B,
-	And #= min(A,B) + (2*AB^3 - (3*Tmp-22)*AB^2 + (36-13*Tmp+Tmp^2)*AB)/4.
-	%And #= min(A,B) + (2*AB^3 - 2*AB*AB*Tmp - AB*AB*Tmp + AB*Tmp*Tmp + 22*AB*AB - 13*AB*Tmp + 36*AB)/4.
-	%And #= min(A,B) + (AB*((2*AB-Tmp)*(AB-Tmp)+4*(AB-Tmp)+9*(2*AB-Tmp)+36))/4.
-b_dword_and0(A, B, And) :- And #= (A+B-abs(A-B))/2 + (A*B*(A-3)*(B-3)*((A-1)*(B-2)+(A-2)*(B-1)))/4.
+	X2 #= A / 16,
+	Y2 #= B / 16,
+	X3 #= A / 64,
+	Y3 #= B / 64,
+	Xor #= ((A + B*((-1)^A)) mod 4) % 2 bits
+	+ 4*((X + Y*((-1)^X)) mod 4)    % 4 bits
+	+ 16*((X2 + Y2*((-1)^X2)) mod 4)  % 6 bits
+        + 64*((X3 + Y3*((-1)^X3)) mod 4). % 8 bits
 dword_or(A, B, Or) :-
-	Or #>= A,
-	Or #>= B,
-	dword_and(A, B, And),
-	Or #= A + B - And.
+	dword_xor(A, B, Xor),
+	Or #= (A + B + Xor)/2.
 dword_xor(A, B, Xor) :-
-	dword_and(A, B, And),
-	Xor #= A + B - 2*And.
+	dword_dec2bin(A, AD),
+	dword_dec2bin(B, BD),
+	dword_dec2bin(Xor, XorD),
+	maplist(dword_xor0, AD, BD, XorD).
 dword_not(A, NotA) :-
 	NotA #= 0xFFFFFFFF - A.
 
+test_xor :-
+	time(test_xor_1),
+	time(test_xor_2),
+	time(test_xor_3).
+test_xor_1 :-
+	[A,B] ins 0..0xFFF,
+	dword_xor(A, B, 5),
+	findall(_, labeling([bisect], [A, B]), _).
+test_xor_2 :-
+	[A,B] ins 0..0xFFF,
+	dword_xor(A, 5, B),
+	findall(_, labeling([bisect], [A, B]), _).
+test_xor_3 :-
+	[A,B] ins 0..0xFFF,
+	dword_xor(5, A, B),
+	findall(_, labeling([bisect], [A, B]), _).
+
+% czasy bez "bisect" dla dwoch nieznanych:
+% 1,211,356 inferences, 0,266 CPU in 0,250 seconds (106% CPU, 4560399 Lips)
+% 528,134 inferences, 0,063 CPU in 0,078 seconds (80% CPU, 8450144 Lips)
+% 490,866 inferences, 0,078 CPU in 0,063 seconds (125% CPU, 6283085 Lips)
+%
+% czasy z bisect dla dwoch nieznanych (X,Y,5), (X,5,Y), (5,X,Y):
+% % 434,156 inferences, 0,125 CPU in 0,109 seconds (114% CPU, 3473248 Lips)
+% 329,505 inferences, 0,063 CPU in 0,063 seconds (100% CPU, 5272080 Lips)
+% 402,798 inferences, 0,047 CPU in 0,063 seconds (75% CPU, 8593024 Lips)
+%
+% czasy z bisect dla jednej nieznanej:
+% 66,198 inferences, 0,016 CPU in 0,016 seconds (100% CPU, 4236672 Lips)
+% 56,437 inferences, 0,016 CPU in 0,016 seconds (100% CPU, 3611968 Lips)
+% 63,021 inferences, 0,016 CPU in 0,031 seconds (50% CPU, 4033344 Lips)
+%
+% dysproporcje dla starego dword_and:
+% 3,224,747,117 inferences, 490,469 CPU in 500,932 seconds (98% CPU, 6574827 Lips)
+% 18,230,375 inferences, 2,438 CPU in 2,594 seconds (94% CPU, 7479128 Lips)
+% 20,433,484 inferences, 2,969 CPU in 3,031 seconds (98% CPU, 6882858 Lips)
+
+%%
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
-%
+%%
 domain(buffer, Buffer) :-
 	length(Buffer, 64),
 	Buffer ins 0..255.
