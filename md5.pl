@@ -6,55 +6,116 @@
 start :-
 	use_module(library(clpfd)).
 
-dword_dec2bin(Dec, Dword) :-
-	length(Dword, 4),
-	Dword ins 0..255,
-	Dec in 0..4294967295,
-	Positions = [16777216, 65536, 256, 1],
-	scalar_product(Positions, Dword, #=, Dec).
+% return 1 if X is 0 or return 0 if X is nonzero
+if_zero(X, Result) :- Result in 0..1, Result #= 0^X.
+if_equal(X, C, Result) :- Result in 0..1, Result #= 0^(X-C).
+if_lesser(X, C, Result) :-  Result in 0..1, Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
+if_greater(X, C, Result) :-  Result in 0..1, Result #= ((C - max(X,C))/(C-X+1*0^(C-X))).
+
+nearest_powers_of_2(X, Low, High) :-
+	X in 0..0xFFFFFFFF,
+	Low in 0..31,
+	High in 1..32,
+	X #>= 2^Low,
+	X #=< 2^High,
+	Low + 1 #= High.
+
+
 dword_and(A, B, And) :-
-	And #=< A,
-	And #=< B,
 	dword_xor(A, B, Xor),
 	And #= (A + B - Xor)/2.
-dword_xor0(A, B, Xor) :-
-	X #= A / 4, % important: integer division!
-	Y #= B / 4,
-	X2 #= A / 16,
-	Y2 #= B / 16,
-	X3 #= A / 64,
-	Y3 #= B / 64,
-	Xor #= ((A + B*((-1)^A)) mod 4) % 2 bits
-	+ 4*((X + Y*((-1)^X)) mod 4)    % 4 bits
-	+ 16*((X2 + Y2*((-1)^X2)) mod 4)  % 6 bits
-        + 64*((X3 + Y3*((-1)^X3)) mod 4). % 8 bits
 dword_or(A, B, Or) :-
 	dword_xor(A, B, Xor),
 	Or #= (A + B + Xor)/2.
+o0_dword_xor(A, B, Xor) :-
+	% specyficzna optymalizacja: predykat jest najwydajniejszy w postaci (var, nonvar, var)
+	% oraz (nonvar, nonvar, var) niz w innych kombinacjach, a jego argumenty sa zamienne
+	% wiec wystarczy je ulozyc w najlepszej kolejnosci
+	var(B) -> ( nonvar(Xor) -> dword_xor1(A, Xor, B, 32) ; dword_xor1(B, A, Xor, 32));
+	(   var(Xor) -> dword_xor1(A, B, Xor, 32) ; dword_xor1(Xor, B, A, 32) ).
 dword_xor(A, B, Xor) :-
-	dword_dec2bin(A, AD),
-	dword_dec2bin(B, BD),
-	dword_dec2bin(Xor, XorD),
-	maplist(dword_xor0, AD, BD, XorD).
+	dword_xor1(A, B, Xor, 32).
 dword_not(A, NotA) :-
 	NotA #= 0xFFFFFFFF - A.
+
+dword_xor1(A, B, Xor, Bits) :-
+	integer(Bits),
+	Limit is 2^Bits - 1,
+	[A, B, Xor] ins 0..Limit,
+	Count is (Bits / 2) - 1,
+	dword_xor1(A, B, 0, Count, Xor),
+	!. % odciecie poniewaz pracujemy na ograniczeniach, a te sa wyliczane tylko raz
+dword_xor1(A, B, Sum, 0, Xor) :-
+	% Xor #= Sum + ((A + B*((-1)^A)) mod 4).
+	xor0(A, B, Tmp),
+	Xor #= Sum + Tmp.
+dword_xor1(A, B, Sum, Count, Xor) :-
+	P is 4^Count,
+	X #= A / P,
+	Y #= B / P,
+	% NewSum #= Sum + P*((X + Y*((-1)^X)) mod 4),
+	xor0(X, Y, Tmp),
+	NewSum #= Sum + P*Tmp,
+	NewCount is Count - 1,
+	dword_xor1(A, B, NewSum, NewCount, Xor).
+% w przegladzie 0 do 0x2FFFF inferencji 17 m
+% preferowane wywolanie: (v,n,v) oraz (n,n,v)
+% test_md5 przy pelnej optymalizacji: 163 k
+% test_md5_reverse przy pelnej optymalizacji: 5 333 k
+xor0(A, B, Xor) :-
+	Xor #= ((A + B*((-1)^A)) mod 4).
+
+% w przegladzie 0 do 0x2FFFF inferencji 21 m
+% preferowane wywolanie: (n,v,v) oraz (n,n,v)
+% test_md5 przy pelnej optymalizacji: ?
+% test_md5_reverse przy pelnej optymalizacji: ?
+o_xor0(A, B, Xor) :-
+	Xor #= ((1 + (A mod 2)*2)*B - 3*A) mod 4.
+
+rotator(AList, BList, Params) :-
+	nonvar(AList),
+	nonvar(BList),
+	length(AList, Len),
+	length(BList, Len),
+	maplist(rotate0(Params), AList, BList).
+rotate0(_Params, A, B) :-
+	B #= A.
+
+
 
 test_xor :-
 	time(test_xor_1),
 	time(test_xor_2),
-	time(test_xor_3).
+	time(test_xor_3),
+	time(test_xor_4),
+	time(test_xor_5),
+	time(test_xor_6).
+
 test_xor_1 :-
-	[A,B] ins 0..0xFFF,
+	[A,B] ins 0..0x2FFF,
 	dword_xor(A, B, 5),
 	findall(_, labeling([bisect], [A, B]), _).
 test_xor_2 :-
-	[A,B] ins 0..0xFFF,
+	[A,B] ins 0..0x2FFF,
 	dword_xor(A, 5, B),
 	findall(_, labeling([bisect], [A, B]), _).
 test_xor_3 :-
-	[A,B] ins 0..0xFFF,
+	[A,B] ins 0..0x2FFF,
 	dword_xor(5, A, B),
 	findall(_, labeling([bisect], [A, B]), _).
+test_xor_4 :-
+	X in 0..0x2FFF,
+	dword_xor(0xFFF, 5, X),
+	findall(_, labeling([bisect], [X]), _).
+test_xor_5 :-
+	X in 0..0x2FFF,
+	dword_xor(0xFFF, X, 5),
+	findall(_, labeling([bisect], [X]), _).
+test_xor_6 :-
+	X in 0..0x2FFF,
+	dword_xor(X, 0xFFF, 5),
+	findall(_, labeling([bisect], [X]), _).
+
 
 % czasy bez "bisect" dla dwoch nieznanych:
 % 1,211,356 inferences, 0,266 CPU in 0,250 seconds (106% CPU, 4560399 Lips)
@@ -83,9 +144,6 @@ test_xor_3 :-
 domain(buffer, Buffer) :-
 	length(Buffer, 64),
 	Buffer ins 0..255.
-domain(dword, Dword) :-
-	length(Dword, 32),
-	Dword ins 0..1.
 domain(states, [S0, S1, S2, S3]) :-
 	[S0, S1, S2, S3] ins 0..0xFFFFFFFF.
 var_length(List, Length) :- var(List), label([Length]), length(List, Length).
@@ -99,7 +157,7 @@ md5(MsgStr, Digest) :-
 	domain(states, Digest),
 	Length in 0..56,
 	var_length(MsgStr, Length),
-	MsgStr ins 20..105,
+	MsgStr ins 20..125,
 
 	% creating some constants
 	States = [ 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 ],
@@ -117,10 +175,9 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	maplist(domain(states), [States, Digest]),
 	domain(buffer, Buffer),
 	BitCount in 0..65535,
-	label([BitCount]),
-	HighBitCount in 0..255,
+	%label([BitCount]),
+	[HighBitCount, LowBitCount] ins 0..255,
 	HighBitCount #= BitCount / 256,
-	LowBitCount in 0..255,
 	LowBitCount #= BitCount mod 256,
 	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
 	length(Padding, 63), % one byte to be added later
@@ -133,13 +190,10 @@ md5_final(States, Buffer, BitCount, Digest) :-
 % (index < 56) ? (56 - index) : (120 - index);
 % true relation
 md5_final_padlen(Index, PadLen) :-
-	Index in 0..55,
-	PadLen in 1..56,
-	PadLen #= 56 - Index.
-md5_final_padlen(Index, PadLen) :-
-	Index in 56..63,
-	PadLen in 57..64,
-	PadLen #= 120 - Index.
+	Index in 0..63,
+	PadLen in 1..64,
+	if_lesser(Index, 56, Lesser),
+	PadLen #= Lesser*(56-Index) + (1-Lesser)*(120-Index).
 dword_align(Input, Output, Length) :-
 	% dodac domeny dla wszystkich argumentow
 	PaddingLen in 0..24,
@@ -332,7 +386,8 @@ md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, New
 	Len #= InputLen - PartLen,
 	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer). % true rel
 byte_copy(ByteList, ByteIndex, ByteData, ByteLen, NewBuffer) :-
-	[ByteIndex, ByteLen] ins 0..63,
+	ByteIndex in 0..63,
+	ByteLen in 0..63, % czy to jest poprawne? czy moze byc dlugosc 0 a nie moze 64?
 	maplist(domain(buffer), [ByteList, NewBuffer]),
 	(   var(ByteData) -> TrueDataLen in 0..63, TrueDataLen #>= ByteLen, label([TrueDataLen]), length(ByteData, TrueDataLen)
 	;	length(ByteData, TrueDataLen), TrueDataLen #>= ByteLen),
@@ -350,12 +405,20 @@ buffer(Index, Data, DataLen, _, Value, Position, NewPosition) :-
 	Pointer is Position - Index,
 	nth0(Pointer, Data, Value),
 	NewPosition is Position + 1.
+buffer0(Index, Data, DataLen, OldValue, NewValue, Position, NewPosition) :-
+	if_lesser(Position, Index, L1),
+	if_lesser(Position, Index + DataLen, L2),
+        Pointer #= Position - Index,
+	element(Pointer, Data, Value),
+	NewValue #= (1-L1)*(L2)*Value + (1-(1-L1)*(L2))*OldValue,
+	NewPosition #= Position + 1.
 demo_md5 :-
 	print('Type text to be hashed: '),
 	current_input(Stream),
 	read_line_to_codes(Stream, Codes),
 	md5(Codes, Digest),
 	print('MD5 hash: '),
+	labeling([bisect], Digest),
 	maplist(format('~16r'), Digest).
 test_md5 :-
 	md5("TEST", [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
