@@ -20,20 +20,23 @@ nearest_powers_of_2(X, Low, High) :-
 	X #=< 2^High,
 	Low + 1 #= High.
 
-
 dword_and(A, B, And) :-
+	And #=< A,
+	And #=< B,
 	dword_xor(A, B, Xor),
 	And #= (A + B - Xor)/2.
 dword_or(A, B, Or) :-
+	Or #>= A,
+	Or #>= B,
 	dword_xor(A, B, Xor),
 	Or #= (A + B + Xor)/2.
-o0_dword_xor(A, B, Xor) :-
+dword_xor(A, B, Xor) :-
 	% specyficzna optymalizacja: predykat jest najwydajniejszy w postaci (var, nonvar, var)
 	% oraz (nonvar, nonvar, var) niz w innych kombinacjach, a jego argumenty sa zamienne
 	% wiec wystarczy je ulozyc w najlepszej kolejnosci
 	var(B) -> ( nonvar(Xor) -> dword_xor1(A, Xor, B, 32) ; dword_xor1(B, A, Xor, 32));
 	(   var(Xor) -> dword_xor1(A, B, Xor, 32) ; dword_xor1(Xor, B, A, 32) ).
-dword_xor(A, B, Xor) :-
+o_dword_xor(A, B, Xor) :-
 	dword_xor1(A, B, Xor, 32).
 dword_not(A, NotA) :-
 	NotA #= 0xFFFFFFFF - A.
@@ -72,17 +75,6 @@ xor0(A, B, Xor) :-
 o_xor0(A, B, Xor) :-
 	Xor #= ((1 + (A mod 2)*2)*B - 3*A) mod 4.
 
-rotator(AList, BList, Params) :-
-	nonvar(AList),
-	nonvar(BList),
-	length(AList, Len),
-	length(BList, Len),
-	maplist(rotate0(Params), AList, BList).
-rotate0(_Params, A, B) :-
-	B #= A.
-
-
-
 test_xor :-
 	time(test_xor_1),
 	time(test_xor_2),
@@ -104,7 +96,7 @@ test_xor_3 :-
 	dword_xor(5, A, B),
 	findall(_, labeling([bisect], [A, B]), _).
 test_xor_4 :-
-	X in 0..0x2FFF,
+	X in 0..0xFFFF,
 	dword_xor(0xFFF, 5, X),
 	findall(_, labeling([bisect], [X]), _).
 test_xor_5 :-
@@ -148,6 +140,7 @@ domain(states, [S0, S1, S2, S3]) :-
 	[S0, S1, S2, S3] ins 0..0xFFFFFFFF.
 var_length(List, Length) :- var(List), label([Length]), length(List, Length).
 var_length(List, Length) :- nonvar(List), length(List, Length).
+
 % glowna funkcja md5
 % parametry:
 % MsgStr - lista kodow znakowych, np. "Test"
@@ -202,7 +195,204 @@ dword_align(Input, Output, Length) :-
 	maplist(=(0), Padding),
 	append(Input, Padding, Output).
 
+
+% #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
+% #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
+% #define H(x, y, z) ((x) ^ (y) ^ (z))
+% #define I(x, y, z) ((y) ^ ((x) | (~z)))
+
+% md5_transform(type, x, y, z, result).
+md5_transform(f, X, Y, Z, Result) :-
+	dword_and(X, Y, XandY),
+	dword_not(X, NotX),
+	dword_and(NotX, Z, NXandZ),
+	dword_or(XandY, NXandZ, Result).
+md5_transform(g, X, Y, Z, Result) :-
+	md5_transform(f, Z, X, Y, Result).
+md5_transform(h, X, Y, Z, Result) :-
+	dword_xor(X, Y, XxorY),
+	dword_xor(XxorY, Z, Result).
+md5_transform(i, X, Y, Z, Result) :-
+	dword_not(Z, NotZ),
+	dword_or(NotZ, X, NZorX),
+	dword_xor(NZorX, Y, Result).
+md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
+	S in 0..31,
+	[A,B,C,D,Result,X,AC,Rotated] ins 0..4294967295,
+	md5_transform(Trans, B, C, D, F),
+	Sum #= (A + F + X + AC) mod 4294967296,
+	S2 #= 32 - S,
+	Rotated #= (Sum * 2^S) mod 4294967296 + (Sum / 2^S2), % rotate left S times
+	Result #= (Rotated + B) mod 4294967296.
+md5_bytes_to_dwords([], []).
+md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
+	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
+	md5_bytes_to_dwords(Bytes, Dwords).
+% md5_transform_states/3
+% prawdziwa relacja
+% TRUE RELATION!
+% States = stany inicjalne
+% Bytes = kodowany komunikat
+% NewStates = stany koncowe
+md5_transform_states(States, Bytes, NewStates) :-
+	maplist(domain(states), [States, NewStates]),
+	domain(buffer, Bytes),
+	md5_bytes_to_dwords(Bytes, Dwords),
+	States = [S1,S2,S3,S4],
+	Result = [T1,T2,T3,T4],
+	NewStates = [O1,O2,O3,O4],
+	O1 #= (S1 + T1) mod 4294967296,
+	O2 #= (S2 + T2) mod 4294967296,
+	O3 #= (S3 + T3) mod 4294967296,
+	O4 #= (S4 + T4) mod 4294967296,
+	md5_transform_states(1, States, Dwords, Result).
+
+md5_transform_states(65, States, _, States).
+md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
+	md5_round_constant(Round, Trans, Rotation, AC, Index),
+	md5_rotate_constant(Rotation, RotValue),
+	nth0(Index, Dwords, X),
+	md5_transform_list(Trans, A, B, C, D, X, RotValue, AC, Result),
+	NewRound is Round + 1,
+	md5_transform_states(NewRound, [ D, Result, B, C ], Dwords, NewStates).
+test_md5_transform :-
+	L = [1732584193,4023233417,2562383102,271733878],
+	M = [ 84, 69, 83, 84, 128, 0, 0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      32,  0,  0,  0,  0,  0,  0,  0],
+	md5_transform_states(L, M, N),
+	labeling([bisect], N),
+	N = [1272527619,3839322129,3276068592,3207945929].
+test_md5_transform_reverse :-
+	N = [1272527619,3839322129,3276068592,3207945929],
+	md5_transform_states(L, M, N),
+	labeling([bisect], L),
+	L = [1732584193,4023233417,2562383102,271733878],
+	labeling([bisect], M),
+	M = [ 84, 69, 83, 84, 128, 0, 0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      0,  0,  0,  0,  0,  0,  0,  0,
+	      32,  0,  0,  0,  0,  0,  0,  0].
+test_md5_transform_list :-
+	A = 1732584193,
+	B = 4023233417,
+	C = 2562383102,
+	D = 271733878,
+	X = 1414743380,
+	RV = 7,
+	AC = 3614090360,
+	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
+	Result = 3468857630.
+test_md5_transform_list_reverse :-
+	Result = 3468857630,
+	RV = 7,
+	AC = 3614090360,
+	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
+	labeling([ffc, bisect], [A,B,C,D,X]),
+	A = 1732584193,
+	B = 4023233417,
+	C = 2562383102,
+	D = 271733878,
+	X = 1414743380.
+test_md5_transform_list_reverse_2 :-
+	Result = 3468857630,
+	RV = 7,
+	AC = 3614090360,
+	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
+	A = 1732584193,
+	B = 4023233417,
+	C = 2562383102,
+	D = 271733878,
+	labeling([ffc, bisect], [A,B,C,D,X]),
+	X = 1414743380.
+
+
+
+
+
+
+% md5_update(
+%    States, NewStates,
+%    Buffer, NewBuffer,
+%    Input, InputLen,
+%    InCount0, OutCount0,
+%    InCount1, OutCount1).
+%
+% Prawdziwa relacja!
+
+md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+	maplist(domain(states), [States, NewStates]),
+	maplist(domain(buffer), [Buffer, NewBuffer]),
+	% TO DO: domena dla Input
+	[BitCount, NewBitCount] ins 0..512, % 512 czy 511?
+	md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount).
+md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+	Index in 0..63,
+	PartLen in 1..64,
+	Index #= (BitCount / 8) mod 64,
+	PartLen #= 64 - Index,
+	InputLen #< PartLen,
+	NewBitCount #= BitCount + InputLen * 8,
+	byte_copy(Buffer, Index, Input, InputLen, NewBuffer).
+md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+	Index in 0..63,
+	PartLen in 1..64,
+	Index #= (BitCount / 8) mod 64,
+	PartLen #= 64 - Index,
+	InputLen #>= PartLen,
+	NewBitCount #= BitCount + InputLen * 8,
+	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer), % true rel
+	md5_transform_states(States, TmpBuffer, NewStates), % true rel
+	var_length(Ignore, PartLen),
+	append(Ignore, NewInput, Input),
+	Len #= InputLen - PartLen,
+	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer). % true rel
+byte_copy(Buffer, _, [], _, Buffer).
+byte_copy(Buffer, Start, Data, DataLen, NewBuffer) :-
+	maplist(domain(buffer), [Buffer, NewBuffer]),
+	Start in 0..63,
+	[DataLen, TrueDataLen] ins 0..64,
+	TrueDataLen #>= DataLen,
+	var_length(Data, TrueDataLen),
+	byte_copy(Buffer, Start, Data, DataLen, NewBuffer, 0).
+byte_copy([], _, _, _, [], _).
+byte_copy([ B | Buffer ], Start, Data, DataLen, [ NB | NewBuffer ], Counter) :-
+	if_lesser(Counter, Start, L1),
+	End #= Start + DataLen,
+	if_lesser(Counter, End, L2),
+	Position #= (1-L1)*(L2)*(Counter-Start),
+	nth0(Position, Data, D),
+	NB #= (1-L1)*(L2)*D + (1-(1-L1)*(L2))*B,
+	NewCounter is Counter + 1,
+	byte_copy(Buffer, Start, Data, DataLen, NewBuffer, NewCounter).
+demo_md5 :-
+	print('Type text to be hashed: '),
+	current_input(Stream),
+	read_line_to_codes(Stream, Codes),
+	md5(Codes, Digest),
+	print('MD5 hash: '),
+	labeling([bisect], Digest),
+	maplist(format('~16r'), Digest).
+test_md5 :-
+	md5("TEST", [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
+test_md5_reverse :-
+	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]),
+	Word = [84, 69, 83, 84].
+	%labeling([bisect], [X]),
+	%print(X), nl.
+
 % OPIS: nazwa stalej, wartosc
+% Min = 4
+% Max = 23
 md5_rotate_constant(s11, 7).
 md5_rotate_constant(s12, 12).
 md5_rotate_constant(s13, 17).
@@ -222,6 +412,9 @@ md5_rotate_constant(s44, 21).
 
 % OPIS: nr rundy, nazwa funkcji, symbol rotacji, stala specjalna, numer
 % bloku
+%  findall(Z, md5_round_constant(_,_,_,Z,_), Z), min_list(Z, Min).
+%  Min = 38016083
+%  Max = 4294925233
 md5_round_constant(1, f, s11, 0xd76aa478, 0).
 md5_round_constant(2, f, s12, 0xe8c7b756, 1).
 md5_round_constant(3, f, s13, 0x242070db, 2).
@@ -286,148 +479,6 @@ md5_round_constant(61, i, s41, 0xf7537e82, 4).
 md5_round_constant(62, i, s42, 0xbd3af235, 11).
 md5_round_constant(63, i, s43, 0x2ad7d2bb, 2).
 md5_round_constant(64, i, s44, 0xeb86d391, 9).
-
-% #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
-% #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
-% #define H(x, y, z) ((x) ^ (y) ^ (z))
-% #define I(x, y, z) ((y) ^ ((x) | (~z)))
-
-% md5_transform(type, x, y, z, result).
-md5_transform(f, X, Y, Z, Result) :-
-	dword_and(X, Y, XandY),
-	dword_not(X, NotX),
-	dword_and(NotX, Z, NXandZ),
-	dword_or(XandY, NXandZ, Result).
-md5_transform(g, X, Y, Z, Result) :-
-	dword_and(X, Z, XandZ),
-	dword_not(Z, NotZ),
-	dword_and(NotZ, Y, NZandY),
-	dword_or(XandZ, NZandY, Result).
-md5_transform(h, X, Y, Z, Result) :-
-	dword_xor(X, Y, XxorY),
-	dword_xor(XxorY, Z, Result).
-md5_transform(i, X, Y, Z, Result) :-
-	dword_not(Z, NotZ),
-	dword_or(NotZ, X, NZorX),
-	dword_xor(NZorX, Y, Result).
-md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
-	S in 0..31,
-	[A,B,C,D,Result,X,AC] ins 0..4294967295,
-	md5_transform(Trans, B, C, D, F),
-	Sum #= (A + F + X + AC) mod 4294967296,
-	S2 #= 32 - S,
-	Rotated #= (Sum * 2^S) mod 4294967296 + (Sum / 2^S2), % rotate left S times
-	Result #= (Rotated + B) mod 4294967296.
-md5_bytes_to_dwords([], []).
-md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
-	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
-	md5_bytes_to_dwords(Bytes, Dwords).
-% md5_transform_states/3
-% prawdziwa relacja
-% TRUE RELATION!
-% States = stany inicjalne
-% Bytes = kodowany komunikat
-% NewStates = stany koncowe
-md5_transform_states(States, Bytes, NewStates) :-
-	maplist(domain(states), [States, NewStates]),
-	domain(buffer, Bytes),
-	md5_bytes_to_dwords(Bytes, Dwords),
-	md5_transform_states(1, States, Dwords, Result),
-	States = [S1,S2,S3,S4],
-	Result = [T1,T2,T3,T4],
-	NewStates = [O1,O2,O3,O4],
-	O1 #= (S1 + T1) mod 4294967296,
-	O2 #= (S2 + T2) mod 4294967296,
-	O3 #= (S3 + T3) mod 4294967296,
-	O4 #= (S4 + T4) mod 4294967296.
-md5_transform_states(65, States, _, States).
-md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
-	md5_round_constant(Round, Trans, Rotation, AC, Index),
-	md5_rotate_constant(Rotation, RotValue),
-	nth0(Index, Dwords, X),
-	md5_transform_list(Trans, A, B, C, D, X, RotValue, AC, Result),
-	NewRound is Round + 1,
-	md5_transform_states(NewRound, [ D, Result, B, C ], Dwords, NewStates).
-
-% md5_update(
-%    States, NewStates,
-%    Buffer, NewBuffer,
-%    Input, InputLen,
-%    InCount0, OutCount0,
-%    InCount1, OutCount1).
-%
-% Prawdziwa relacja!
-
-md5_update(States, NewStates, Buffer, NewBuffer, InputBytes, InputByteLen, BitCount, NewBitCount) :-
-	maplist(domain(states), [States, NewStates]),
-	maplist(domain(buffer), [Buffer, NewBuffer]),
-	% TO DO: domena dla InputBytes
-	[BitCount, NewBitCount] ins 0..512, % 512 czy 511?
-	md5_update0(States, NewStates, Buffer, NewBuffer, InputBytes, InputByteLen, BitCount, NewBitCount).
-md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	Index in 0..63,
-	PartLen in 1..64,
-	Index #= (BitCount / 8) mod 64,
-	PartLen #= 64 - Index,
-	InputLen #< PartLen,
-	NewBitCount #= BitCount + InputLen * 8,
-	byte_copy(Buffer, Index, Input, InputLen, NewBuffer).
-md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	Index in 0..63,
-	PartLen in 1..64,
-	Index #= (BitCount / 8) mod 64,
-	PartLen #= 64 - Index,
-	InputLen #>= PartLen,
-	NewBitCount #= BitCount + InputLen * 8,
-	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer), % true rel
-	md5_transform_states(States, TmpBuffer, NewStates), % true rel
-	var_length(Ignore, PartLen),
-	append(Ignore, NewInput, Input),
-	Len #= InputLen - PartLen,
-	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer). % true rel
-byte_copy(ByteList, ByteIndex, ByteData, ByteLen, NewBuffer) :-
-	ByteIndex in 0..63,
-	ByteLen in 0..63, % czy to jest poprawne? czy moze byc dlugosc 0 a nie moze 64?
-	maplist(domain(buffer), [ByteList, NewBuffer]),
-	(   var(ByteData) -> TrueDataLen in 0..63, TrueDataLen #>= ByteLen, label([TrueDataLen]), length(ByteData, TrueDataLen)
-	;	length(ByteData, TrueDataLen), TrueDataLen #>= ByteLen),
-	label([ByteIndex, ByteLen]),
-	foldl(buffer(ByteIndex, ByteData, ByteLen), ByteList, NewBuffer, 0, _).
-buffer(Index, _, _, Value, Value, Position, NewPosition) :-
-	Position < Index,
-	NewPosition is Position + 1.
-buffer(Index, _, DataLen, Value, Value, Position, NewPosition) :-
-	Position >= Index + DataLen,
-	NewPosition is Position + 1.
-buffer(Index, Data, DataLen, _, Value, Position, NewPosition) :-
-	Position >= Index,
-	Position < Index + DataLen,
-	Pointer is Position - Index,
-	nth0(Pointer, Data, Value),
-	NewPosition is Position + 1.
-buffer0(Index, Data, DataLen, OldValue, NewValue, Position, NewPosition) :-
-	if_lesser(Position, Index, L1),
-	if_lesser(Position, Index + DataLen, L2),
-        Pointer #= Position - Index,
-	element(Pointer, Data, Value),
-	NewValue #= (1-L1)*(L2)*Value + (1-(1-L1)*(L2))*OldValue,
-	NewPosition #= Position + 1.
-demo_md5 :-
-	print('Type text to be hashed: '),
-	current_input(Stream),
-	read_line_to_codes(Stream, Codes),
-	md5(Codes, Digest),
-	print('MD5 hash: '),
-	labeling([bisect], Digest),
-	maplist(format('~16r'), Digest).
-test_md5 :-
-	md5("TEST", [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
-test_md5_reverse :-
-	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]),
-	%Word = [84, 69, 83, X],
-	%label([X]),
-	print(Word), nl.
-
 
 
 
