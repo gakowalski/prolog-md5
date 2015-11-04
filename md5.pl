@@ -2,9 +2,11 @@
 % wersja 1 - prolog bez CLP, implementacja raczej niepelna relacja
 % wersja 2 - prolog z CLP, pelne relacje, ale trudne etykietowanie
 % wersja 3 - dalsze zmiany w logice
-% w22 - przystosowanie do SWI-Prolog 7.1.14
+% wersja 22 - przystosowanie do SWI-Prolog 7.1.14
+% wersja 23 - pierwszy etap migracji z CLP(FD) na CLP(B)
 
 :- use_module(library(clpfd)).
+:- use_module(library(clpb)).
 
 % return 1 if X is 0 or return 0 if X is nonzero
 if_zero(X, Result) :- Result in 0..1, Result #= 0^X.
@@ -12,6 +14,39 @@ if_equal(X, C, Result) :- Result in 0..1, Result #= 0^(X-C).
 if_lesser(X, C, Result) :- Result in 0..1, Result * (C-X+1*0^(C-X)) #= (C - min(X,C)).
 if_lesser_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
 if_greater_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - max(X,C))/(C-X+1*0^(C-X))).
+
+and(A, B, C) :- sat(A*B=:=C).
+or(A, B, C) :- sat(A+B=:=C).
+xor(A, B, C) :- sat(A#B=:=C).
+not(A, C) :- sat(~A=:=C).
+
+% add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
+add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
+
+% add (A, B, PrevCarry, Sum, NextCarry) realizuje sume dwoch bitow
+add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), or(C1, C2, C).
+
+% true relation
+add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
+add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
+	add(A, B, Prev, S, C),
+	add_list(AT, BT, ST, Prev).
+
+% true relation
+and_list([ X ], [ Y ], [ Z ]) :- and(X, Y, Z).
+and_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- and(X, Y, Z), and_list(XT, YT, ZT).
+
+% true relation
+or_list([ X ], [ Y ], [ Z ]) :- or(X, Y, Z).
+or_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- or(X, Y, Z), or_list(XT, YT, ZT).
+
+% true relation
+xor_list([ X ], [ Y ], [ Z ]) :- xor(X, Y, Z).
+xor_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- xor(X, Y, Z), xor_list(XT, YT, ZT).
+
+% true relation
+not_list([ X ], [ Y ]) :- not(X, Y).
+not_list([ X | XT ], [ Y | YT ]) :- not(X, Y), not_list(XT, YT).
 
 nearest_powers_of_2(X, Low, High) :-
 	X in 0..0xFFFFFFFF,
@@ -54,11 +89,11 @@ dword_xor1(A, B, Sum, 0, Xor) :-
 	xor0(A, B, Tmp),
 	Xor #= Sum + Tmp.
 dword_xor1(A, B, Sum, Count, Xor) :-
-	P is 4^Count,
+	P is 2^Count,
 	X #= A // P,
 	Y #= B // P,
 	% NewSum #= Sum + P*((X + Y*((-1)^X)) mod 4),
-	xor0(X, Y, Tmp),
+	xor1(X, Y, Tmp),
 	NewSum #= Sum + P*Tmp,
 	NewCount is Count - 1,
 	dword_xor1(A, B, NewSum, NewCount, Xor).
@@ -68,6 +103,9 @@ dword_xor1(A, B, Sum, Count, Xor) :-
 % test_md5_reverse przy pelnej optymalizacji: 5 333 k
 xor0(A, B, Xor) :-
 	Xor #= ((A + B*((-1)^A)) mod 4).
+
+xor1(A, B, Xor) :-
+	sat(Xor =:= A # B).
 
 % w przegladzie 0 do 0x2FFFF inferencji 21 m
 % preferowane wywolanie: (n,v,v) oraz (n,n,v)
