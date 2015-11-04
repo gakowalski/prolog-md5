@@ -2,15 +2,16 @@
 % wersja 1 - prolog bez CLP, implementacja raczej niepelna relacja
 % wersja 2 - prolog z CLP, pelne relacje, ale trudne etykietowanie
 % wersja 3 - dalsze zmiany w logice
+% w22 - przystosowanie do SWI-Prolog 7.1.14
 
-start :-
-	use_module(library(clpfd)).
+:- use_module(library(clpfd)).
 
 % return 1 if X is 0 or return 0 if X is nonzero
 if_zero(X, Result) :- Result in 0..1, Result #= 0^X.
 if_equal(X, C, Result) :- Result in 0..1, Result #= 0^(X-C).
-if_lesser(X, C, Result) :-  Result in 0..1, Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
-if_greater(X, C, Result) :-  Result in 0..1, Result #= ((C - max(X,C))/(C-X+1*0^(C-X))).
+if_lesser(X, C, Result) :- Result in 0..1, Result * (C-X+1*0^(C-X)) #= (C - min(X,C)).
+if_lesser_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
+if_greater_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - max(X,C))/(C-X+1*0^(C-X))).
 
 nearest_powers_of_2(X, Low, High) :-
 	X in 0..0xFFFFFFFF,
@@ -24,12 +25,12 @@ dword_and(A, B, And) :-
 	And #=< A,
 	And #=< B,
 	dword_xor(A, B, Xor),
-	And #= (A + B - Xor)/2.
+	And #= (A + B - Xor)//2.
 dword_or(A, B, Or) :-
 	Or #>= A,
 	Or #>= B,
 	dword_xor(A, B, Xor),
-	Or #= (A + B + Xor)/2.
+	Or #= (A + B + Xor)//2.
 dword_xor(A, B, Xor) :-
 	% specyficzna optymalizacja: predykat jest najwydajniejszy w postaci (var, nonvar, var)
 	% oraz (nonvar, nonvar, var) niz w innych kombinacjach, a jego argumenty sa zamienne
@@ -45,7 +46,7 @@ dword_xor1(A, B, Xor, Bits) :-
 	integer(Bits),
 	Limit is 2^Bits - 1,
 	[A, B, Xor] ins 0..Limit,
-	Count is (Bits / 2) - 1,
+	Count is (Bits // 2) - 1,
 	dword_xor1(A, B, 0, Count, Xor),
 	!. % odciecie poniewaz pracujemy na ograniczeniach, a te sa wyliczane tylko raz
 dword_xor1(A, B, Sum, 0, Xor) :-
@@ -54,8 +55,8 @@ dword_xor1(A, B, Sum, 0, Xor) :-
 	Xor #= Sum + Tmp.
 dword_xor1(A, B, Sum, Count, Xor) :-
 	P is 4^Count,
-	X #= A / P,
-	Y #= B / P,
+	X #= A // P,
+	Y #= B // P,
 	% NewSum #= Sum + P*((X + Y*((-1)^X)) mod 4),
 	xor0(X, Y, Tmp),
 	NewSum #= Sum + P*Tmp,
@@ -170,13 +171,13 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	BitCount in 0..65535,
 	%label([BitCount]),
 	[HighBitCount, LowBitCount] ins 0..255,
-	HighBitCount #= BitCount / 256,
+	HighBitCount #= BitCount // 256,
 	LowBitCount #= BitCount mod 256,
 	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
 	length(Padding, 63), % one byte to be added later
 	maplist(=(0), Padding),
 	Index in 0..63,
-	Index #= (BitCount / 8) mod 64,
+	Index #= (BitCount // 8) mod 64,
 	md5_final_padlen(Index, PadLen), % PadLen in 1..64
 	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, BitCount, NewBC), % true rel
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
@@ -222,7 +223,7 @@ md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	md5_transform(Trans, B, C, D, F),
 	Sum #= (A + F + X + AC) mod 4294967296,
 	S2 #= 32 - S,
-	Rotated #= (Sum * 2^S) mod 4294967296 + (Sum / 2^S2), % rotate left S times
+	Rotated #= (Sum * 2^S) mod 4294967296 + (Sum // 2^S2), % rotate left S times
 	Result #= (Rotated + B) mod 4294967296.
 md5_bytes_to_dwords([], []).
 md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
@@ -338,7 +339,7 @@ md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewB
 md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
 	Index in 0..63,
 	PartLen in 1..64,
-	Index #= (BitCount / 8) mod 64,
+	Index #= (BitCount // 8) mod 64,
 	PartLen #= 64 - Index,
 	InputLen #< PartLen,
 	NewBitCount #= BitCount + InputLen * 8,
@@ -346,7 +347,7 @@ md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBit
 md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
 	Index in 0..63,
 	PartLen in 1..64,
-	Index #= (BitCount / 8) mod 64,
+	Index #= (BitCount // 8) mod 64,
 	PartLen #= 64 - Index,
 	InputLen #>= PartLen,
 	NewBitCount #= BitCount + InputLen * 8,
@@ -383,12 +384,19 @@ demo_md5 :-
 	labeling([bisect], Digest),
 	maplist(format('~16r'), Digest).
 test_md5 :-
-	md5("TEST", [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
+	md5(`TEST`, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
 test_md5_reverse :-
 	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]),
 	Word = [84, 69, 83, 84].
 	%labeling([bisect], [X]),
 	%print(X), nl.
+test_md5_reverse_true :-
+	length(Word, Len),
+	Len < 16,
+	Word ins 32..126,
+	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]),
+	labeling([bisect], Word),
+	print(Word), nl.
 
 % OPIS: nazwa stalej, wartosc
 % Min = 4
