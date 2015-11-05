@@ -193,12 +193,15 @@ test_conv_hex_to_dword_reverse :-
 % MsgStr - lista kodow znakowych, np. "Test"
 % Digest - Wynik
 md5(MsgStr, Digest) :-
+	length(Buffer, 512),
+	maplist(=(0), Buffer),
+	word(BitCount),
+	maplist(=(0), BitCount),
+
 	decode_string_align(MsgStr, ByteList, Length),
 	append(ByteList, BitList),
 	md5_init(States),
-	length(Buffer, 512),
-	maplist(=(0), Buffer),
-	md5_update(States, NewStates, Buffer, NewBuffer, BitList, Length, 0, NewBitCount),
+	md5_update(States, NewStates, Buffer, NewBuffer, BitList, Length, BitCount, NewBitCount),
 	md5_final(NewStates, NewBuffer, NewBitCount, Digest),
 	!.
 
@@ -690,34 +693,76 @@ test_md5_transform_states_reverse :-
 %    InCount0, OutCount0,
 %    InCount1, OutCount1).
 md5_update(States, States, Buffer, NewBuffer, Input, InputLen0, BitCount, NewBitCount) :-
+	byte(InputLen0),
+	word(BitCount),
+	word(NewBitCount),
+	length(Index, 6),
+	length(PartLen, 7),
+
 	byte_dec2bin(InputLen, InputLen0),
-	Index is (BitCount // 8) mod 64,
-	PartLen is 64 - Index,
-	InputLen < PartLen,
-	NewBitCount is BitCount + InputLen * 8,
-	byte_copy(Buffer, Index, Input, InputLen, NewBuffer),
+
+	%Index is (BitCount // 8) mod 64,
+	append([[_,_,_,_,_,_,_], Index, [_, _, _]], BitCount),
+
+	%PartLen is 64 - Index,
+	IndexTmp = [0 | Index],
+	add_list(PartLen, IndexTmp, [1,0,0,0,0,0,0], 0),
+
+	%InputLen < PartLen,
+	PartLenTmp = [0 | PartLen],
+	lt_list(InputLen0, PartLenTmp),
+
+	%NewBitCount is BitCount + InputLen * 8,
+	append([[0,0,0,0, 0], InputLen0, [0,0,0]], InputLenBits),
+	add_list(BitCount, InputLenBits, NewBitCount, _),
+
+	byte(IndexDec),
+	append([[0,0], Index], IndexDec),
+	byte_dec2bin(Index0, IndexDec),
+
+	byte_copy(Buffer, Index0, Input, InputLen, NewBuffer),
 	!.
 
 md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen0, BitCount, NewBitCount) :-
+	byte(InputLen0),
+	word(BitCount),
+	word(NewBitCount),
+	byte(Index),
+	length(Index, 6),
+	length(PartLen, 7),
+
 	byte_dec2bin(InputLen, InputLen0),
-	Index is (BitCount // 8) mod 64,
-	PartLen is 64 - Index,
-	InputLen >= PartLen,
-	NewBitCount is BitCount + InputLen * 8,
-	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer),
+
+	%Index is (BitCount // 8) mod 64,
+	append([[_,_,_,_,_,_,_], Index, [_, _, _]], BitCount),
+
+	%PartLen is 64 - Index,
+	IndexTmp = [0 | Index],
+	add_list(PartLen, IndexTmp, [1,0,0,0,0,0,0], 0),
+
+	%InputLen < PartLen,
+	PartLenTmp = [0 | PartLen],
+	\+(lt_list(InputLen0, PartLenTmp)),
+
+	%NewBitCount is BitCount + InputLen * 8,
+	append([[0,0,0,0, 0], InputLen0, [0,0,0]], InputLenBits),
+	add_list(BitCount, InputLenBits, NewBitCount, _),
+
+	byte(IndexDec),
+	append([[0,0], Index], IndexDec),
+	byte_dec2bin(Index0, IndexDec),
+
+	byte(PartLenDec),
+	append([[0], PartLen], PartLenDec),
+	byte_dec2bin(PartLen0, PartLenDec),
+
+	byte_copy(Buffer, Index0, Input, PartLen0, TmpBuffer),
 	md5_transform_states(States, TmpBuffer, NewStates),
-	NewPartLen is PartLen * 8,
+	NewPartLen is PartLen0 * 8,
 	divide_list(NewPartLen, Input, _, NewInput),
-	Len is InputLen - PartLen,
+	Len is InputLen - PartLen0,
 	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer),
 	!.
-
-md5_update_partlen_loop(PartLen, InputLen, PartLen) :-
-	PartLen >= InputLen + 63.
-md5_update_partlen_loop(PartLen, InputLen, I) :-
-	PartLen < InputLen - 63,
-	NewI is PartLen + 64,
-	md5_update_partlen_loop(NewI, InputLen, I).
 
 test_md5_update :-
 	test_md5_update_1,
@@ -727,9 +772,13 @@ test_md5_update :-
 test_md5_update_1 :-
 	char_to_dword('TEST', Test),
 	conv_hex_to_dword('00000000', Zs),  % padding
-	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
+	length(Buffer, 512),
+	maplist(=(0), Buffer),
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
-	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32).
+	md5_update(_, _, Buffer, NewBuffer, Test,
+		   [0,0,0,0, 0,1,0,0],
+		   [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0],
+		   [0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0]).
 
 % niedoskonaly test
 % sprawdza tylko dzialanie odwrotne dla braku bufora
@@ -750,7 +799,10 @@ test_md5_update_2 :-
 	append([Bits, Zs], AddBits),
 	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,  Zs,Zs], Buffer),
 	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Bits,Zs], NewBuffer),
-	md5_update(States, [S0, S1, S2, S3], Buffer, NewBuffer, AddBits, 8, 448, 512),
+	md5_update(States, [S0, S1, S2, S3], Buffer, NewBuffer, AddBits,
+		   [0,0,0,0, 1,0,0,0],
+		   [0,0,0,0, 0,0,0,1, 1,1,0,0, 0,0,0,0],
+		   [0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,0,0]),
 	conv_hex_to_dword('4bd93b03', S0),
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
