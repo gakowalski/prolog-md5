@@ -1,30 +1,20 @@
-% md5
-% wersja 1 - prolog bez CLP, implementacja raczej niepelna relacja
-% wersja 2 - prolog z CLP, pelne relacje, ale trudne etykietowanie
-% wersja 3 - dalsze zmiany w logice
-% wersja 22 - przystosowanie do SWI-Prolog 7.1.14
-% wersja 23 - pierwszy etap migracji z CLP(FD) na CLP(B)
-
-:- use_module(library(clpfd)).
 :- use_module(library(clpb)).
 
-% return 1 if X is 0 or return 0 if X is nonzero
-if_zero(X, Result) :- Result in 0..1, Result #= 0^X.
-if_equal(X, C, Result) :- Result in 0..1, Result #= 0^(X-C).
-if_lesser(X, C, Result) :- Result in 0..1, Result * (C-X+1*0^(C-X)) #= (C - min(X,C)).
-if_lesser_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
-if_greater_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - max(X,C))/(C-X+1*0^(C-X))).
+byte(Var) :- length(Var, 8).
+word(Var) :- length(Var, 16).
+dword(Var) :- length(Var, 32).
 
-and(A, B, C) :- sat(A*B=:=C).
-or(A, B, C) :- sat(A+B=:=C).
-xor(A, B, C) :- sat(A#B=:=C).
-not(A, C) :- sat(~A=:=C).
+combine(H, L, V) :-
+	byte(H), byte(L), word(V),
+	append([H, L], V).
+combine(H, L, V) :-
+	word(H), word(L), dword(V),
+	append([H, L], V).
 
 % add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
-add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
-
+add(A, B, S, C) :- sat(A#B=:=S), sat(A*B=:=C).
 % add (A, B, PrevCarry, Sum, NextCarry) realizuje sume dwoch bitow
-add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), or(C1, C2, C).
+add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), sat(C1+C2=:=C).
 
 % true relation
 add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
@@ -33,412 +23,333 @@ add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
 	add_list(AT, BT, ST, Prev).
 
 % true relation
-and_list([ X ], [ Y ], [ Z ]) :- and(X, Y, Z).
-and_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- and(X, Y, Z), and_list(XT, YT, ZT).
+and_list([ X ], [ Y ], [ Z ]) :- sat(X*Y=:=Z).
+and_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :-
+	sat(X*Y=:=Z), and_list(XT, YT, ZT).
 
 % true relation
-or_list([ X ], [ Y ], [ Z ]) :- or(X, Y, Z).
-or_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- or(X, Y, Z), or_list(XT, YT, ZT).
+or_list([ X ], [ Y ], [ Z ]) :- sat(X+Y=:=Z).
+or_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :-
+	sat(X+Y=:=Z), or_list(XT, YT, ZT).
 
 % true relation
-xor_list([ X ], [ Y ], [ Z ]) :- xor(X, Y, Z).
-xor_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- xor(X, Y, Z), xor_list(XT, YT, ZT).
+xor_list([ X ], [ Y ], [ Z ]) :- sat(X#Y=:=Z).
+xor_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :-
+	sat(X#Y=:=Z), xor_list(XT, YT, ZT).
 
 % true relation
-not_list([ X ], [ Y ]) :- not(X, Y).
-not_list([ X | XT ], [ Y | YT ]) :- not(X, Y), not_list(XT, YT).
+not_list([ X ], [ Y ]) :- sat(X =:= ~Y).
+not_list([ X | XT ], [ Y | YT ]) :-
+	sat(X =:= ~Y), not_list(XT, YT).
 
-nearest_powers_of_2(X, Low, High) :-
-	X in 0..0xFFFFFFFF,
-	Low in 0..31,
-	High in 1..32,
-	X #>= 2^Low,
-	X #=< 2^High,
-	Low + 1 #= High.
+eq_list([], []).
+eq_list([A | AT], [B | BT]) :- sat(A=:=B), eq_list(AT, BT).
 
-dword_and(A, B, And) :-
-	And #=< A,
-	And #=< B,
-	dword_xor(A, B, Xor),
-	And #= (A + B - Xor)//2.
-dword_or(A, B, Or) :-
-	Or #>= A,
-	Or #>= B,
-	dword_xor(A, B, Xor),
-	Or #= (A + B + Xor)//2.
-dword_xor(A, B, Xor) :-
-	% specyficzna optymalizacja: predykat jest najwydajniejszy w postaci (var, nonvar, var)
-	% oraz (nonvar, nonvar, var) niz w innych kombinacjach, a jego argumenty sa zamienne
-	% wiec wystarczy je ulozyc w najlepszej kolejnosci
-	var(B) -> ( nonvar(Xor) -> dword_xor1(A, Xor, B, 32) ; dword_xor1(B, A, Xor, 32));
-	(   var(Xor) -> dword_xor1(A, B, Xor, 32) ; dword_xor1(Xor, B, A, 32) ).
-o_dword_xor(A, B, Xor) :-
-	dword_xor1(A, B, Xor, 32).
-dword_not(A, NotA) :-
-	NotA #= 0xFFFFFFFF - A.
+gt_list([A | _], [B | _]) :- sat(A > B).
+gt_list([A | AT], [B | BT]) :- sat(A=:=B), gt_list(AT, BT).
 
-dword_xor1(A, B, Xor, Bits) :-
-	integer(Bits),
-	Limit is 2^Bits - 1,
-	[A, B, Xor] ins 0..Limit,
-	Count is (Bits // 2) - 1,
-	dword_xor1(A, B, 0, Count, Xor),
-	!. % odciecie poniewaz pracujemy na ograniczeniach, a te sa wyliczane tylko raz
-dword_xor1(A, B, Sum, 0, Xor) :-
-	% Xor #= Sum + ((A + B*((-1)^A)) mod 4).
-	xor0(A, B, Tmp),
-	Xor #= Sum + Tmp.
-dword_xor1(A, B, Sum, Count, Xor) :-
-	P is 2^Count,
-	X #= A // P,
-	Y #= B // P,
-	% NewSum #= Sum + P*((X + Y*((-1)^X)) mod 4),
-	xor1(X, Y, Tmp),
-	NewSum #= Sum + P*Tmp,
-	NewCount is Count - 1,
-	dword_xor1(A, B, NewSum, NewCount, Xor).
-% w przegladzie 0 do 0x2FFFF inferencji 17 m
-% preferowane wywolanie: (v,n,v) oraz (n,n,v)
-% test_md5 przy pelnej optymalizacji: 163 k
-% test_md5_reverse przy pelnej optymalizacji: 5 333 k
-xor0(A, B, Xor) :-
-	Xor #= ((A + B*((-1)^A)) mod 4).
-
-xor1(A, B, Xor) :-
-	sat(Xor =:= A # B).
-
-% w przegladzie 0 do 0x2FFFF inferencji 21 m
-% preferowane wywolanie: (n,v,v) oraz (n,n,v)
-% test_md5 przy pelnej optymalizacji: ?
-% test_md5_reverse przy pelnej optymalizacji: ?
-o_xor0(A, B, Xor) :-
-	Xor #= ((1 + (A mod 2)*2)*B - 3*A) mod 4.
-
-test_xor :-
-	time(test_xor_1),
-	time(test_xor_2),
-	time(test_xor_3),
-	time(test_xor_4),
-	time(test_xor_5),
-	time(test_xor_6).
-
-test_xor_1 :-
-	[A,B] ins 0..0x2FFF,
-	dword_xor(A, B, 5),
-	findall(_, labeling([bisect], [A, B]), _).
-test_xor_2 :-
-	[A,B] ins 0..0x2FFF,
-	dword_xor(A, 5, B),
-	findall(_, labeling([bisect], [A, B]), _).
-test_xor_3 :-
-	[A,B] ins 0..0x2FFF,
-	dword_xor(5, A, B),
-	findall(_, labeling([bisect], [A, B]), _).
-test_xor_4 :-
-	X in 0..0xFFFF,
-	dword_xor(0xFFF, 5, X),
-	findall(_, labeling([bisect], [X]), _).
-test_xor_5 :-
-	X in 0..0x2FFF,
-	dword_xor(0xFFF, X, 5),
-	findall(_, labeling([bisect], [X]), _).
-test_xor_6 :-
-	X in 0..0x2FFF,
-	dword_xor(X, 0xFFF, 5),
-	findall(_, labeling([bisect], [X]), _).
+lt_list([A | _], [B | _]) :- sat(A < B).
+lt_list([A | AT], [B | BT]) :- sat(A=:=B), lt_list(AT, BT).
 
 
-% czasy bez "bisect" dla dwoch nieznanych:
-% 1,211,356 inferences, 0,266 CPU in 0,250 seconds (106% CPU, 4560399 Lips)
-% 528,134 inferences, 0,063 CPU in 0,078 seconds (80% CPU, 8450144 Lips)
-% 490,866 inferences, 0,078 CPU in 0,063 seconds (125% CPU, 6283085 Lips)
-%
-% czasy z bisect dla dwoch nieznanych (X,Y,5), (X,5,Y), (5,X,Y):
-% % 434,156 inferences, 0,125 CPU in 0,109 seconds (114% CPU, 3473248 Lips)
-% 329,505 inferences, 0,063 CPU in 0,063 seconds (100% CPU, 5272080 Lips)
-% 402,798 inferences, 0,047 CPU in 0,063 seconds (75% CPU, 8593024 Lips)
-%
-% czasy z bisect dla jednej nieznanej:
-% 66,198 inferences, 0,016 CPU in 0,016 seconds (100% CPU, 4236672 Lips)
-% 56,437 inferences, 0,016 CPU in 0,016 seconds (100% CPU, 3611968 Lips)
-% 63,021 inferences, 0,016 CPU in 0,031 seconds (50% CPU, 4033344 Lips)
-%
-% dysproporcje dla starego dword_and:
-% 3,224,747,117 inferences, 490,469 CPU in 500,932 seconds (98% CPU, 6574827 Lips)
-% 18,230,375 inferences, 2,438 CPU in 2,594 seconds (94% CPU, 7479128 Lips)
-% 20,433,484 inferences, 2,969 CPU in 3,031 seconds (98% CPU, 6882858 Lips)
+% hex_digit(digit, char_code, bit_list)
+% cyfry
+hex_digit(0, 48, [ 0, 0, 0, 0 ]).
+hex_digit(1, 49, [ 0, 0, 0, 1 ]).
+hex_digit(2, 50, [ 0, 0, 1, 0 ]).
+hex_digit(3, 51, [ 0, 0, 1, 1 ]).
+hex_digit(4, 52, [ 0, 1, 0, 0 ]).
+hex_digit(5, 53, [ 0, 1, 0, 1 ]).
+hex_digit(6, 54, [ 0, 1, 1, 0 ]).
+hex_digit(7, 55, [ 0, 1, 1, 1 ]).
+hex_digit(8, 56, [ 1, 0, 0, 0 ]).
+hex_digit(9, 57, [ 1, 0, 0, 1 ]).
+% duze litery
+hex_digit(10, 65, [ 1, 0, 1, 0 ]).
+hex_digit(11, 66, [ 1, 0, 1, 1 ]).
+hex_digit(12, 67, [ 1, 1, 0, 0 ]).
+hex_digit(13, 68, [ 1, 1, 0, 1 ]).
+hex_digit(14, 69, [ 1, 1, 1, 0 ]).
+hex_digit(15, 70, [ 1, 1, 1, 1 ]).
+% male litery
+hex_digit(10, 97, [ 1, 0, 1, 0 ]).
+hex_digit(11, 98, [ 1, 0, 1, 1 ]).
+hex_digit(12, 99, [ 1, 1, 0, 0 ]).
+hex_digit(13, 100, [ 1, 1, 0, 1 ]).
+hex_digit(14, 101, [ 1, 1, 1, 0 ]).
+hex_digit(15, 102, [ 1, 1, 1, 1 ]).
 
-%%
+% byte_dec2bin/2
+% byte_dec2bin(Decimal, Binary)
+% true relation
+% Relacja istnieje, gdy Decimal i Binary reprezentuja ta sama wartosc
+% bajtu.
+byte_dec2bin(Decimal, Binary) :-
+	between(0, 255, Decimal),
+	length(Binary, 8),
+	labeling(Binary),
+	Binary = [A, B, C, D, E, F, G, H],
+	Decimal is A*128+B*64+C*32+D*16+E*8+F*4+G*2+H.
+
+word_dec2bin(Decimal, Binary) :-
+	between(0, 0xffff, Decimal),
+	word(Binary),
+	labeling(Binary),
+	combine(B2, B1, Binary),
+	byte_dec2bin(D1, B1),
+	byte_dec2bin(D2, B2),
+	Decimal is D2*256+D1.
+
+test_byte_dec2bin :- byte_dec2bin(54, [ 0, 0, 1, 1, 0, 1, 1, 0 ]).
+
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
-%%
-domain(buffer, Buffer) :-
-	length(Buffer, 64),
-	Buffer ins 0..255.
-domain(states, [S0, S1, S2, S3]) :-
-	[S0, S1, S2, S3] ins 0..0xFFFFFFFF.
-var_length(List, Length) :- var(List), label([Length]), length(List, Length).
-var_length(List, Length) :- nonvar(List), length(List, Length).
+
+conv_hex_to_dword(HexStr, List) :-
+	string_to_list(HexStr, [C0, C1, C2, C3, C4, C5, C6, C7]),
+	hex_digit(_, C0, B0),
+	hex_digit(_, C1, B1),
+	hex_digit(_, C2, B2),
+	hex_digit(_, C3, B3),
+	hex_digit(_, C4, B4),
+	hex_digit(_, C5, B5),
+	hex_digit(_, C6, B6),
+	hex_digit(_, C7, B7),
+	append( [ B0, B1, B2, B3, B4, B5, B6, B7 ], List).
+
+conv_hex_to_dword2(HexStr, List) :-
+	length(Chars, 8),
+	length(List, 32),
+	labeling(List),
+	maplist(between(48, 102), Chars),
+%	forall(member(M, Chars), hex_digit(_, M, B)),
+	string_to_list(HexStr, Chars).
+
+
+conv_hex_to_dword_reverse(HexStr, List) :-
+	string_to_list(HexStr, [C0, C1, C2, C3, C4, C5, C6, C7]),
+	hex_digit(_, C0, B0),
+	hex_digit(_, C1, B1),
+	hex_digit(_, C2, B2),
+	hex_digit(_, C3, B3),
+	hex_digit(_, C4, B4),
+	hex_digit(_, C5, B5),
+	hex_digit(_, C6, B6),
+	hex_digit(_, C7, B7),
+	append( [ B6, B7, B4, B5, B2, B3, B0, B1 ], List).
+
+conv_bytes_to_hex([]).
+conv_bytes_to_hex([ H1, H2, H3, H4, H5, H6, H7, H8 | List ]) :-
+	hex_digit(_, C1, [H1, H2, H3, H4]),
+	hex_digit(_, C2, [H5, H6, H7, H8]),
+	put_char(C1),
+	put_char(C2),
+	conv_bytes_to_hex(List),
+	!.
+
+conv_bytes_to_hex_reverse([]).
+conv_bytes_to_hex_reverse([ H1, H2, H3, H4, H5, H6, H7, H8 | List ]) :-
+	hex_digit(_, C1, [H1, H2, H3, H4]),
+	hex_digit(_, C2, [H5, H6, H7, H8]),
+	conv_bytes_to_hex_reverse(List),
+	put_char(C1),
+	put_char(C2),
+	!.
+
+run_tests :-
+	run_test(test_byte_dec2bin),
+	run_test(test_char_to_dword),
+	run_test(test_conv_hex_to_dword),
+	run_test(test_conv_hex_to_dword_reverse),
+	run_test(test_md5_transform_list_f),
+	run_test(test_md5_transform_list_g),
+	run_test(test_md5_transform_list_h),
+	run_test(test_md5_transform_list_i),
+	run_test(test_md5_transform_states),
+	run_test(test_buffer),
+	run_test(test_byte_copy),
+	run_test(test_decode_list),
+	run_test(test_md5_update),
+	run_test(test_md5_final),
+	run_test(test_md5),
+	!.
+
+run_test(Test) :- print(Test), nl, call(Test), !.
+
+test_conv_hex_to_dword :-
+	conv_hex_to_dword('67452301', A),
+	conv_hex_to_dword('efcdab89', B),
+	add_list(A, B, C, 1),
+	conv_hex_to_dword('5712ce8a', C).
+
+test_conv_hex_to_dword_reverse :-
+	conv_hex_to_dword_reverse('0789ABcd', A),
+	conv_hex_to_dword_reverse('12345678', B),
+	add_list(A, B, C, 1),
+	conv_hex_to_dword_reverse('19BD0146', C).
 
 % glowna funkcja md5
 % parametry:
 % MsgStr - lista kodow znakowych, np. "Test"
 % Digest - Wynik
 md5(MsgStr, Digest) :-
-	% domain declarations
-	domain(states, Digest),
-	Length in 0..56,
-	var_length(MsgStr, Length),
-	MsgStr ins 20..125,
-
-	% creating some constants
-	States = [ 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 ],
-	domain(buffer, Buffer),
+	decode_string_align(MsgStr, ByteList, Length),
+	append(ByteList, BitList),
+	md5_init(States),
+	length(Buffer, 512),
 	maplist(=(0), Buffer),
+	md5_update(States, NewStates, Buffer, NewBuffer, BitList, Length, 0, NewBitCount),
+	md5_final(NewStates, NewBuffer, NewBitCount, Digest),
+	!.
 
-	% add padding zeros
-	dword_align(MsgStr, Aligned, Length),
-
-	% process message
-	md5_update(States, NewStates, Buffer, NewBuffer, Aligned, Length, 0, BitCount), % true rel
-	md5_final(NewStates, NewBuffer, BitCount, Digest). % true rel
-
-md5_final(States, Buffer, BitCount, Digest) :-
-	maplist(domain(states), [States, Digest]),
-	domain(buffer, Buffer),
-	BitCount in 0..65535,
-	%label([BitCount]),
-	[HighBitCount, LowBitCount] ins 0..255,
-	HighBitCount #= BitCount // 256,
-	LowBitCount #= BitCount mod 256,
-	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
-	length(Padding, 63), % one byte to be added later
-	maplist(=(0), Padding),
-	Index in 0..63,
-	Index #= (BitCount // 8) mod 64,
-	md5_final_padlen(Index, PadLen), % PadLen in 1..64
-	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, BitCount, NewBC), % true rel
-	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
-% (index < 56) ? (56 - index) : (120 - index);
-% true relation
-md5_final_padlen(Index, PadLen) :-
-	Index in 0..63,
-	PadLen in 1..64,
-	if_lesser(Index, 56, Lesser),
-	PadLen #= Lesser*(56-Index) + (1-Lesser)*(120-Index).
-dword_align(Input, Output, Length) :-
-	% dodac domeny dla wszystkich argumentow
-	PaddingLen in 0..24,
-	PaddingLen #= ((4 - Length mod 4) mod 4),
-	var_length(Padding, PaddingLen),
-	maplist(=(0), Padding),
-	append(Input, Padding, Output).
+exp_md5 :-
+	md5(`TEST`, States),
+	print_digest(States).
 
 
-% #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
-% #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
-% #define H(x, y, z) ((x) ^ (y) ^ (z))
-% #define I(x, y, z) ((y) ^ ((x) | (~z)))
-
-% md5_transform(type, x, y, z, result).
-md5_transform(f, X, Y, Z, Result) :-
-	dword_and(X, Y, XandY),
-	dword_not(X, NotX),
-	dword_and(NotX, Z, NXandZ),
-	dword_or(XandY, NXandZ, Result).
-md5_transform(g, X, Y, Z, Result) :-
-	md5_transform(f, Z, X, Y, Result).
-md5_transform(h, X, Y, Z, Result) :-
-	dword_xor(X, Y, XxorY),
-	dword_xor(XxorY, Z, Result).
-md5_transform(i, X, Y, Z, Result) :-
-	dword_not(Z, NotZ),
-	dword_or(NotZ, X, NZorX),
-	dword_xor(NZorX, Y, Result).
-md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
-	S in 0..31,
-	[A,B,C,D,Result,X,AC,Rotated] ins 0..4294967295,
-	md5_transform(Trans, B, C, D, F),
-	Sum #= (A + F + X + AC) mod 4294967296,
-	S2 #= 32 - S,
-	Rotated #= (Sum * 2^S) mod 4294967296 + (Sum // 2^S2), % rotate left S times
-	Result #= (Rotated + B) mod 4294967296.
-md5_bytes_to_dwords([], []).
-md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
-	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
-	md5_bytes_to_dwords(Bytes, Dwords).
-% md5_transform_states/3
-% prawdziwa relacja
-% TRUE RELATION!
-% States = stany inicjalne
-% Bytes = kodowany komunikat
-% NewStates = stany koncowe
-md5_transform_states(States, Bytes, NewStates) :-
-	maplist(domain(states), [States, NewStates]),
-	domain(buffer, Bytes),
-	md5_bytes_to_dwords(Bytes, Dwords),
-	States = [S1,S2,S3,S4],
-	Result = [T1,T2,T3,T4],
-	NewStates = [O1,O2,O3,O4],
-	O1 #= (S1 + T1) mod 4294967296,
-	O2 #= (S2 + T2) mod 4294967296,
-	O3 #= (S3 + T3) mod 4294967296,
-	O4 #= (S4 + T4) mod 4294967296,
-	md5_transform_states(1, States, Dwords, Result).
-
-md5_transform_states(65, States, _, States).
-md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
-	md5_round_constant(Round, Trans, Rotation, AC, Index),
-	md5_rotate_constant(Rotation, RotValue),
-	nth0(Index, Dwords, X),
-	md5_transform_list(Trans, A, B, C, D, X, RotValue, AC, Result),
-	NewRound is Round + 1,
-	md5_transform_states(NewRound, [ D, Result, B, C ], Dwords, NewStates).
-test_md5_transform :-
-	L = [1732584193,4023233417,2562383102,271733878],
-	M = [ 84, 69, 83, 84, 128, 0, 0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      32,  0,  0,  0,  0,  0,  0,  0],
-	md5_transform_states(L, M, N),
-	labeling([bisect], N),
-	N = [1272527619,3839322129,3276068592,3207945929].
-test_md5_transform_reverse :-
-	N = [1272527619,3839322129,3276068592,3207945929],
-	md5_transform_states(L, M, N),
-	labeling([bisect], L),
-	L = [1732584193,4023233417,2562383102,271733878],
-	labeling([bisect], M),
-	M = [ 84, 69, 83, 84, 128, 0, 0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      32,  0,  0,  0,  0,  0,  0,  0].
-test_md5_transform_list :-
-	A = 1732584193,
-	B = 4023233417,
-	C = 2562383102,
-	D = 271733878,
-	X = 1414743380,
-	RV = 7,
-	AC = 3614090360,
-	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
-	Result = 3468857630.
-test_md5_transform_list_reverse :-
-	Result = 3468857630,
-	RV = 7,
-	AC = 3614090360,
-	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
-	labeling([ffc, bisect], [A,B,C,D,X]),
-	A = 1732584193,
-	B = 4023233417,
-	C = 2562383102,
-	D = 271733878,
-	X = 1414743380.
-test_md5_transform_list_reverse_2 :-
-	Result = 3468857630,
-	RV = 7,
-	AC = 3614090360,
-	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
-	A = 1732584193,
-	B = 4023233417,
-	C = 2562383102,
-	D = 271733878,
-	labeling([ffc, bisect], [A,B,C,D,X]),
-	X = 1414743380.
-
-
-
-
-
-
-% md5_update(
-%    States, NewStates,
-%    Buffer, NewBuffer,
-%    Input, InputLen,
-%    InCount0, OutCount0,
-%    InCount1, OutCount1).
-%
-% Prawdziwa relacja!
-
-md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	maplist(domain(states), [States, NewStates]),
-	maplist(domain(buffer), [Buffer, NewBuffer]),
-	% TO DO: domena dla Input
-	[BitCount, NewBitCount] ins 0..512, % 512 czy 511?
-	md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount).
-md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	Index in 0..63,
-	PartLen in 1..64,
-	Index #= (BitCount // 8) mod 64,
-	PartLen #= 64 - Index,
-	InputLen #< PartLen,
-	NewBitCount #= BitCount + InputLen * 8,
-	byte_copy(Buffer, Index, Input, InputLen, NewBuffer).
-md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	Index in 0..63,
-	PartLen in 1..64,
-	Index #= (BitCount // 8) mod 64,
-	PartLen #= 64 - Index,
-	InputLen #>= PartLen,
-	NewBitCount #= BitCount + InputLen * 8,
-	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer), % true rel
-	md5_transform_states(States, TmpBuffer, NewStates), % true rel
-	var_length(Ignore, PartLen),
-	append(Ignore, NewInput, Input),
-	Len #= InputLen - PartLen,
-	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer). % true rel
-byte_copy(Buffer, _, [], _, Buffer).
-byte_copy(Buffer, Start, Data, DataLen, NewBuffer) :-
-	maplist(domain(buffer), [Buffer, NewBuffer]),
-	Start in 0..63,
-	[DataLen, TrueDataLen] ins 0..64,
-	TrueDataLen #>= DataLen,
-	var_length(Data, TrueDataLen),
-	byte_copy(Buffer, Start, Data, DataLen, NewBuffer, 0).
-byte_copy([], _, _, _, [], _).
-byte_copy([ B | Buffer ], Start, Data, DataLen, [ NB | NewBuffer ], Counter) :-
-	if_lesser(Counter, Start, L1),
-	End #= Start + DataLen,
-	if_lesser(Counter, End, L2),
-	Position #= (1-L1)*(L2)*(Counter-Start),
-	nth0(Position, Data, D),
-	NB #= (1-L1)*(L2)*D + (1-(1-L1)*(L2))*B,
-	NewCounter is Counter + 1,
-	byte_copy(Buffer, Start, Data, DataLen, NewBuffer, NewCounter).
 demo_md5 :-
 	print('Type text to be hashed: '),
 	current_input(Stream),
 	read_line_to_codes(Stream, Codes),
 	md5(Codes, Digest),
 	print('MD5 hash: '),
-	labeling([bisect], Digest),
-	maplist(format('~16r'), Digest).
+	print_digest(Digest),
+	!.
+
 test_md5 :-
-	md5(`TEST`, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
-test_md5_reverse :-
-	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]),
-	Word = [84, 69, 83, 84].
-	%labeling([bisect], [X]),
-	%print(X), nl.
-test_md5_reverse_true :-
-	length(Word, Len),
-	Len < 16,
-	Word ins 32..126,
-	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]),
-	labeling([bisect], Word),
-	print(Word), nl.
+	md5(`TEST`, [S0, S1, S2, S3]),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+	%print_digest(States).
+
+md5_reverse_bytelist([], []).
+md5_reverse_bytelist([ B0,B1,B2,B3 | ByteList ], [ B3,B2,B1,B0 | Reversed ]) :-
+	md5_reverse_bytelist(ByteList, Reversed).
+
+
+md5_final(States, Buffer, BitCount, Digest) :-
+	length(BitsPadding, 48),
+	maplist(=(0), BitsPadding),
+	length(Padding, 512),
+	length(PaddingZeros, 511),
+	maplist(=(0), PaddingZeros),
+	append([1], PaddingZeros, Padding),
+	HighBitCount is BitCount // 256,
+	LowBitCount is BitCount mod 256,
+	byte_dec2bin(HighBitCount, HighByte),
+	byte_dec2bin(LowBitCount, LowByte),
+	append([LowByte,HighByte,BitsPadding], Bits),
+	Index is (BitCount // 8) mod 64,
+	md5_final_padlen(Index, PadLen),
+	byte_dec2bin(PadLen, PadLenB),
+	md5_update(States, NewStates, Buffer, NewBuffer, Padding, PadLenB, BitCount, NewBC),
+	md5_update(NewStates, Digest, NewBuffer, _, Bits, [0,0,0,0, 1,0,0,0], NewBC, _).
+
+print_states([S0, S1, S2, S3]) :-
+	conv_bytes_to_hex(S0), nl,
+	conv_bytes_to_hex(S1), nl,
+	conv_bytes_to_hex(S2), nl,
+	conv_bytes_to_hex(S3), nl.
+
+print_digest([S0, S1, S2, S3]) :-
+	conv_bytes_to_hex_reverse(S0),
+	conv_bytes_to_hex_reverse(S1),
+	conv_bytes_to_hex_reverse(S2),
+	conv_bytes_to_hex_reverse(S3), nl.
+
+test_md5_final :-
+	md5_init(States),
+	char_to_dword('TSET', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Test,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs], Buffer),
+	md5_final(States, Buffer, 32, [S0, S1, S2, S3]),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+	% dokonczyc test
+	%print_digest(Result).
+
+test_md5_final_reverse :-
+	md5_init(States),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3),
+	md5_final(States, Buffer, 32, [S0, S1, S2, S3]),
+	char_to_dword('TSET', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Test,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs, Zs,Zs,Zs,Zs], Buffer)
+	.
+
+% (index < 56) ? (56 - index) : (120 - index);
+md5_final_padlen(Index, PadLen) :-
+	Index < 56,
+	PadLen is 56 - Index.
+md5_final_padlen(Index, PadLen) :-
+	Index >= 56,
+	PadLen is 120 - Index.
+
+decode_string([], [], Length) :-
+	byte(Length),
+	maplist(=(0), Length).
+decode_string([ Char | CharList ], [ Byte | ByteList ], Length) :-
+	byte_dec2bin(Char, Byte),
+	decode_string(CharList, ByteList, TmpLength),
+	add_list(TmpLength, [0,0,0,0, 0,0,0,1], Length, _).
+
+decode_string_align(CharList, ByteList, Length) :-
+	decode_string(CharList, BL, Length),
+	align_byte_list(BL, ByteList, Length).
+
+align_byte_list(ByteList, NewList, Length) :-
+	%PaddingLen is (4 - Length mod 4) mod 4,
+	Length = [_,_,_,_, _,_,A,B],
+	add_list([_,C,D], [0,A,B], [1,0,0], 0),
+	PaddingLen = [0,0,0,0, 0,0,C,D],
+	align_byte_list_append(ByteList, NewList, PaddingLen).
+
+align_byte_list_append(BL, BL, [0,0,0,0, 0,0,0,0]) :- !.
+align_byte_list_append(BL, NL, PL) :-
+	append(BL, [0,0,0,0, 0,0,0,0], Tmp),
+	%NewPadding is PL - 1,
+	add_list(NewPadding, [0,0,0,0, 0,0,0,1], PL, 0),
+	align_byte_list_append(Tmp, NL, NewPadding).
+
+md5_init([ S0, S1, S2, S3 ]) :-
+	conv_hex_to_dword( '67452301' , S0 ),
+	conv_hex_to_dword( 'efcdab89' , S1 ),
+	conv_hex_to_dword( '98badcfe' , S2 ),
+	conv_hex_to_dword( '10325476' , S3 ),
+	!.
+
+decode_list([], []) :- !.
+decode_list(List, [ Dword | ListDwords ]) :-
+	divide_list(32, List, Dword, NewList),
+	decode_list(NewList, ListDwords).
+
+test_decode_list :-
+	conv_hex_to_dword('01010101', A),
+	conv_hex_to_dword('20202020', B),
+	append([A,B],Test),
+	decode_list(Test, [A,B]).
+
+char_to_dword(String, Dword) :-
+	string_to_list(String, [ C1, C2, C3, C4 ]),
+	byte_dec2bin(C1, B1),
+	byte_dec2bin(C2, B2),
+	byte_dec2bin(C3, B3),
+	byte_dec2bin(C4, B4),
+	append([B4, B3, B2, B1], Dword),
+	!.
+
+test_char_to_dword :-
+	char_to_dword('TEST', X),
+	conv_hex_to_dword('54534554', X).
 
 % OPIS: nazwa stalej, wartosc
-% Min = 4
-% Max = 23
 md5_rotate_constant(s11, 7).
 md5_rotate_constant(s12, 12).
 md5_rotate_constant(s13, 17).
@@ -458,73 +369,466 @@ md5_rotate_constant(s44, 21).
 
 % OPIS: nr rundy, nazwa funkcji, symbol rotacji, stala specjalna, numer
 % bloku
-%  findall(Z, md5_round_constant(_,_,_,Z,_), Z), min_list(Z, Min).
-%  Min = 38016083
-%  Max = 4294925233
-md5_round_constant(1, f, s11, 0xd76aa478, 0).
-md5_round_constant(2, f, s12, 0xe8c7b756, 1).
-md5_round_constant(3, f, s13, 0x242070db, 2).
-md5_round_constant(4, f, s14, 0xc1bdceee, 3).
-md5_round_constant(5, f, s11, 0xf57c0faf, 4).
-md5_round_constant(6, f, s12, 0x4787c62a, 5).
-md5_round_constant(7, f, s13, 0xa8304613, 6).
-md5_round_constant(8, f, s14, 0xfd469501, 7).
-md5_round_constant(9, f, s11, 0x698098d8, 8).
-md5_round_constant(10, f, s12, 0x8b44f7af, 9).
-md5_round_constant(11, f, s13, 0xffff5bb1, 10).
-md5_round_constant(12, f, s14, 0x895cd7be, 11).
-md5_round_constant(13, f, s11, 0x6b901122, 12).
-md5_round_constant(14, f, s12, 0xfd987193, 13).
-md5_round_constant(15, f, s13, 0xa679438e, 14).
-md5_round_constant(16, f, s14, 0x49b40821, 15).
-md5_round_constant(17, g, s21, 0xf61e2562, 1).
-md5_round_constant(18, g, s22, 0xc040b340, 6).
-md5_round_constant(19, g, s23, 0x265e5a51, 11).
-md5_round_constant(20, g, s24, 0xe9b6c7aa, 0).
-md5_round_constant(21, g, s21, 0xd62f105d, 5).
-md5_round_constant(22, g, s22, 0x02441453, 10).
-md5_round_constant(23, g, s23, 0xd8a1e681, 15).
-md5_round_constant(24, g, s24, 0xe7d3fbc8, 4).
-md5_round_constant(25, g, s21, 0x21e1cde6, 9).
-md5_round_constant(26, g, s22, 0xc33707d6, 14).
-md5_round_constant(27, g, s23, 0xf4d50d87, 3).
-md5_round_constant(28, g, s24, 0x455a14ed, 8).
-md5_round_constant(29, g, s21, 0xa9e3e905, 13).
-md5_round_constant(30, g, s22, 0xfcefa3f8, 2).
-md5_round_constant(31, g, s23, 0x676f02d9, 7).
-md5_round_constant(32, g, s24, 0x8d2a4c8a, 12).
-md5_round_constant(33, h, s31, 0xfffa3942, 5).
-md5_round_constant(34, h, s32, 0x8771f681, 8).
-md5_round_constant(35, h, s33, 0x6d9d6122, 11).
-md5_round_constant(36, h, s34, 0xfde5380c, 14).
-md5_round_constant(37, h, s31, 0xa4beea44, 1).
-md5_round_constant(38, h, s32, 0x4bdecfa9, 4).
-md5_round_constant(39, h, s33, 0xf6bb4b60, 7).
-md5_round_constant(40, h, s34, 0xbebfbc70, 10).
-md5_round_constant(41, h, s31, 0x289b7ec6, 13).
-md5_round_constant(42, h, s32, 0xeaa127fa, 0).
-md5_round_constant(43, h, s33, 0xd4ef3085, 3).
-md5_round_constant(44, h, s34, 0x04881d05, 6).
-md5_round_constant(45, h, s31, 0xd9d4d039, 9).
-md5_round_constant(46, h, s32, 0xe6db99e5, 12).
-md5_round_constant(47, h, s33, 0x1fa27cf8, 15).
-md5_round_constant(48, h, s34, 0xc4ac5665, 2).
-md5_round_constant(49, i, s41, 0xf4292244, 0).
-md5_round_constant(50, i, s42, 0x432aff97, 7).
-md5_round_constant(51, i, s43, 0xab9423a7, 14).
-md5_round_constant(52, i, s44, 0xfc93a039, 5).
-md5_round_constant(53, i, s41, 0x655b59c3, 12).
-md5_round_constant(54, i, s42, 0x8f0ccc92, 3).
-md5_round_constant(55, i, s43, 0xffeff47d, 10).
-md5_round_constant(56, i, s44, 0x85845dd1, 1).
-md5_round_constant(57, i, s41, 0x6fa87e4f, 8).
-md5_round_constant(58, i, s42, 0xfe2ce6e0, 15).
-md5_round_constant(59, i, s43, 0xa3014314, 6).
-md5_round_constant(60, i, s44, 0x4e0811a1, 13).
-md5_round_constant(61, i, s41, 0xf7537e82, 4).
-md5_round_constant(62, i, s42, 0xbd3af235, 11).
-md5_round_constant(63, i, s43, 0x2ad7d2bb, 2).
-md5_round_constant(64, i, s44, 0xeb86d391, 9).
+md5_round_constant(1, f, s11, 'd76aa478', 0).
+md5_round_constant(2, f, s12, 'e8c7b756', 1).
+md5_round_constant(3, f, s13, '242070db', 2).
+md5_round_constant(4, f, s14, 'c1bdceee', 3).
+md5_round_constant(5, f, s11, 'f57c0faf', 4).
+md5_round_constant(6, f, s12, '4787c62a', 5).
+md5_round_constant(7, f, s13, 'a8304613', 6).
+md5_round_constant(8, f, s14, 'fd469501', 7).
+md5_round_constant(9, f, s11, '698098d8', 8).
+md5_round_constant(10, f, s12, '8b44f7af', 9).
+md5_round_constant(11, f, s13, 'ffff5bb1', 10).
+md5_round_constant(12, f, s14, '895cd7be', 11).
+md5_round_constant(13, f, s11, '6b901122', 12).
+md5_round_constant(14, f, s12, 'fd987193', 13).
+md5_round_constant(15, f, s13, 'a679438e', 14).
+md5_round_constant(16, f, s14, '49b40821', 15).
+md5_round_constant(17, g, s21, 'f61e2562', 1).
+md5_round_constant(18, g, s22, 'c040b340', 6).
+md5_round_constant(19, g, s23, '265e5a51', 11).
+md5_round_constant(20, g, s24, 'e9b6c7aa', 0).
+md5_round_constant(21, g, s21, 'd62f105d', 5).
+md5_round_constant(22, g, s22, '02441453', 10).
+md5_round_constant(23, g, s23, 'd8a1e681', 15).
+md5_round_constant(24, g, s24, 'e7d3fbc8', 4).
+md5_round_constant(25, g, s21, '21e1cde6', 9).
+md5_round_constant(26, g, s22, 'c33707d6', 14).
+md5_round_constant(27, g, s23, 'f4d50d87', 3).
+md5_round_constant(28, g, s24, '455a14ed', 8).
+md5_round_constant(29, g, s21, 'a9e3e905', 13).
+md5_round_constant(30, g, s22, 'fcefa3f8', 2).
+md5_round_constant(31, g, s23, '676f02d9', 7).
+md5_round_constant(32, g, s24, '8d2a4c8a', 12).
+md5_round_constant(33, h, s31, 'fffa3942', 5).
+md5_round_constant(34, h, s32, '8771f681', 8).
+md5_round_constant(35, h, s33, '6d9d6122', 11).
+md5_round_constant(36, h, s34, 'fde5380c', 14).
+md5_round_constant(37, h, s31, 'a4beea44', 1).
+md5_round_constant(38, h, s32, '4bdecfa9', 4).
+md5_round_constant(39, h, s33, 'f6bb4b60', 7).
+md5_round_constant(40, h, s34, 'bebfbc70', 10).
+md5_round_constant(41, h, s31, '289b7ec6', 13).
+md5_round_constant(42, h, s32, 'eaa127fa', 0).
+md5_round_constant(43, h, s33, 'd4ef3085', 3).
+md5_round_constant(44, h, s34, '04881d05', 6).
+md5_round_constant(45, h, s31, 'd9d4d039', 9).
+md5_round_constant(46, h, s32, 'e6db99e5', 12).
+md5_round_constant(47, h, s33, '1fa27cf8', 15).
+md5_round_constant(48, h, s34, 'c4ac5665', 2).
+md5_round_constant(49, i, s41, 'f4292244', 0).
+md5_round_constant(50, i, s42, '432aff97', 7).
+md5_round_constant(51, i, s43, 'ab9423a7', 14).
+md5_round_constant(52, i, s44, 'fc93a039', 5).
+md5_round_constant(53, i, s41, '655b59c3', 12).
+md5_round_constant(54, i, s42, '8f0ccc92', 3).
+md5_round_constant(55, i, s43, 'ffeff47d', 10).
+md5_round_constant(56, i, s44, '85845dd1', 1).
+md5_round_constant(57, i, s41, '6fa87e4f', 8).
+md5_round_constant(58, i, s42, 'fe2ce6e0', 15).
+md5_round_constant(59, i, s43, 'a3014314', 6).
+md5_round_constant(60, i, s44, '4e0811a1', 13).
+md5_round_constant(61, i, s41, 'f7537e82', 4).
+md5_round_constant(62, i, s42, 'bd3af235', 11).
+md5_round_constant(63, i, s43, '2ad7d2bb', 2).
+md5_round_constant(64, i, s44, 'eb86d391', 9).
+
+% #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
+% #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
+% #define H(x, y, z) ((x) ^ (y) ^ (z))
+% #define I(x, y, z) ((y) ^ ((x) | (~z)))
+% md5_transform(type, x, y, z, result).
+
+md5_transform(f, 0, 0, 0, 0).
+md5_transform(f, 0, 0, 1, 1).
+md5_transform(f, 0, 1, 0, 0).
+md5_transform(f, 0, 1, 1, 1).
+md5_transform(f, 1, 0, 0, 0).
+md5_transform(f, 1, 0, 1, 0).
+md5_transform(f, 1, 1, 0, 1).
+md5_transform(f, 1, 1, 1, 1).
+md5_transform(g, 0, 0, 0, 0).
+md5_transform(g, 0, 0, 1, 0).
+md5_transform(g, 0, 1, 0, 1).
+md5_transform(g, 0, 1, 1, 0).
+md5_transform(g, 1, 0, 0, 0).
+md5_transform(g, 1, 0, 1, 1).
+md5_transform(g, 1, 1, 0, 1).
+md5_transform(g, 1, 1, 1, 1).
+md5_transform(h, 0, 0, 0, 0).
+md5_transform(h, 0, 0, 1, 1).
+md5_transform(h, 0, 1, 0, 1).
+md5_transform(h, 0, 1, 1, 0).
+md5_transform(h, 1, 0, 0, 1).
+md5_transform(h, 1, 0, 1, 0).
+md5_transform(h, 1, 1, 0, 0).
+md5_transform(h, 1, 1, 1, 1).
+md5_transform(i, 0, 0, 0, 1).
+md5_transform(i, 0, 0, 1, 0).
+md5_transform(i, 0, 1, 0, 0).
+md5_transform(i, 0, 1, 1, 1).
+md5_transform(i, 1, 0, 0, 1).
+md5_transform(i, 1, 0, 1, 1).
+md5_transform(i, 1, 1, 0, 0).
+md5_transform(i, 1, 1, 1, 0).
+
+% pojedyncza transformacja - makra F, G, H, I
+md5_transform_list(Trans, [ X ], [ Y ], [ Z ], [ R ]) :- md5_transform(Trans, X, Y, Z, R).
+md5_transform_list(Trans, [ X | XT ], [ Y | YT ], [ Z | ZT ], [ R | Result]) :-
+	md5_transform(Trans, X, Y, Z, R),
+	md5_transform_list(Trans, XT, YT, ZT, Result).
+
+% zlozona transformacja - makra FF, GG, HH, II
+% zaimplementowane dzialanie odwrotne, ale niesprawdzone
+% bo strasznie czasochlonna petla
+md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
+	(   var(Result) ->
+	md5_transform_list(Trans, B, C, D, F),
+	add_list(X, AC, XaddAC, _),
+	add_list(F, XaddAC, FaddXaddAC, _),
+	add_list(A, FaddXaddAC, Sum, _),
+	dword_rotate_left(S, Sum, Rotated),
+	add_list(Rotated, B, Result, _)
+	;   add_list(Rotated, B, Result, _),
+	    dword_rotate_left(S, Sum, Rotated),
+	    add_list(X, AC, XaddAC, _),
+	    add_list(F, XaddAC, FaddXaddAC, _),
+	    add_list(A, FaddXaddAC, Sum, _),
+	    md5_transform_list(Trans, B, C, D, F)
+	).
+
+test_md5_transform_list_f :-
+	conv_hex_to_dword('67452301', A),
+	conv_hex_to_dword('efcdab89', B),
+	conv_hex_to_dword('98badcfe', C),
+	conv_hex_to_dword('10325476', D),
+	conv_hex_to_dword('54534554', X),
+	conv_hex_to_dword('d76aa478', AC),
+	md5_rotate_constant(s11, S),
+	md5_transform_list(f, A, B, C, D, X, S, AC, Result),
+	%conv_bytes_to_hex(Result),
+	conv_hex_to_dword('cec2911e', Result),
+	!.
+
+% bardzo wazne - budulec calej funkcji MD5!
+test_md5_transform_list_f_reverse :-
+	conv_hex_to_dword('d76aa478', AC),
+	conv_hex_to_dword('cec2911e', Result),
+	conv_hex_to_dword('67452301', A1),
+	conv_hex_to_dword('efcdab89', B1),
+	conv_hex_to_dword('98badcfe', C1),
+	conv_hex_to_dword('10325476', D1),
+	conv_hex_to_dword('54534554', X1),
+        md5_rotate_constant(s11, S),
+	length(A, 32),
+	%length(B, 32),
+	%length(C, 32),
+	%length(D, 32),
+	md5_transform_list(f, A, B1, C1, D1, X1, S, AC, Result),
+	A = A1,
+	%B = B1,
+	%C = C1,
+	%D = D1,
+	%X = X1,
+	true.
+
+test_md5_transform_list_g :-
+	conv_hex_to_dword('f24947ec', A),
+	conv_hex_to_dword('b2afe275', B),
+	conv_hex_to_dword('55a9265b', C),
+	conv_hex_to_dword('6c2db7db', D),
+	conv_hex_to_dword('00000080', X),
+	conv_hex_to_dword('f61e2562', AC),
+	md5_rotate_constant(s21, S),
+	md5_transform_list(g, A, B, C, D, X, S, AC, Result),
+	%conv_bytes_to_hex(Result),
+	conv_hex_to_dword('f551e658', Result),
+	!.
+
+test_md5_transform_list_h :-
+	conv_hex_to_dword('9618ecbf', A),
+	conv_hex_to_dword('644f7032', B),
+	conv_hex_to_dword('d7308312', C),
+	conv_hex_to_dword('bb370c61', D),
+	conv_hex_to_dword('00000000', X),
+	conv_hex_to_dword('fffa3942', AC),
+	md5_rotate_constant(s31, S),
+	md5_transform_list(h, A, B, C, D, X, S, AC, Result),
+	%conv_bytes_to_hex(Result),
+	conv_hex_to_dword('4a11c45b', Result),
+	!.
+
+test_md5_transform_list_i :-
+	conv_hex_to_dword('677459b5', A),
+	conv_hex_to_dword('b9e8c88b', B),
+	conv_hex_to_dword('c0c65283', C),
+	conv_hex_to_dword('8c0c96a7', D),
+	conv_hex_to_dword('54534554', X),
+	conv_hex_to_dword('f4292244', AC),
+	md5_rotate_constant(s41, S),
+	md5_transform_list(i, A, B, C, D, X, S, AC, Result),
+	%conv_bytes_to_hex(Result),
+	conv_hex_to_dword('8587f205', Result),
+	!.
+
+%
+% divide_list/4
+% divide_list(C, List, Left, Right).
+%
+% Relacja prawdziwa gdy List sklada sie z dwoch list: Left o dlugosci C
+% oraz Right.
+%
+% Dzielenie listy o dlugosci N na dwie listy: liste Left o dlugosci C,
+% oraz Right o dlugosci N-C. Relacja nie wymaga znajomosci dlugosci N,
+% ale wymaga znajomosci dlugosci C, aby odliczyc miejsce rozerwania
+% list. Wartosc C moze przyjac wartosci nieujemne - w tym zero.
+%
+% W przypadku relacyjnej wersji predykatu nalezy uwazac na mozliwosc
+% wejscia w petle nieskonczona przy jednoczesnej niewiadomej zarowno
+% dlugosci glownej listy jak i pola Right.
+%
+% Example: divide_list(2, [1,2,3,4], [1,2], [3,4]).
+
+divide_list(C, List, Left, Right) :-
+	append([Left, Right], List),
+	length(Left, C).
+
+% true relation
+rol_list([H|T], R) :- append(T, [H], R).
+
+% dword_rotate_left/4
+% dword_rotate_left(C, InputList, OutputList)
+% falszywa relacja, ale zachowujaca ograniczona i wystarczajaca
+% odwracalnosc - OutputList to InputList o C obroconych elementow
+% BitCounter zawsze musi byc podany Zawsze musi byc podana
+% przynajmnie jedna z list: wejsciowa lub wynikowa
+
+dword_rotate_left(0, Input, Input).
+dword_rotate_left(C, Input, Output) :-
+	C > 0,
+	C < 32,
+	(   nonvar(Input)
+	->
+	divide_list(C, Input, Left, Right),
+	append(Right, Left, Output)
+	;
+	D is 32 - C,
+	divide_list(D, Output, Left, Right),
+	append(Right, Left, Input)).
+
+
+md5_transform_states(States, BlockStr, NewStates) :-
+        decode_list(BlockStr, X),
+	md5_reverse_dwordlist(X, Y),
+	md5_transform_states_decoded(States, Y, NewStates).
+
+md5_reverse_dwordlist([], []).
+md5_reverse_dwordlist([ Dword | DwordList ], [ R | Reversed ]) :-
+	md5_reverse_dword(Dword, R),
+	md5_reverse_dwordlist( DwordList, Reversed ).
+
+md5_reverse_dword(Dword, Reversed) :-
+	divide_list(8, Dword, B0, Tmp),
+	divide_list(8, Tmp, B1, Tmp2),
+	divide_list(8, Tmp2, B2, B3),
+	append([B3, B2, B1, B0], Reversed).
+
+% States to lista czterech list po 4 bajty kazda
+md5_transform_states_decoded(States, Dwords, NewStates) :-
+	md5_transform_states(1, States, Dwords, Result),
+	md5_add_states(States, Result, NewStates).
+
+md5_add_states([S1,S2,S3,S4], [T1,T2,T3,T4], [O1,O2,O3,O4]) :-
+	add_list(S1, T1, O1, _),
+	add_list(S2, T2, O2, _),
+	add_list(S3, T3, O3, _),
+	add_list(S4, T4, O4, _).
+
+md5_transform_states(65, States, _, States).
+md5_transform_states(Round, [ A, B, C, D ], X, NewStates) :-
+	md5_round_constant(Round, Trans, Rotation, AC, Index),
+	md5_rotate_constant(Rotation, RotValue),
+	length(X, 16),
+	nth0(Index, X, XValue),
+	conv_hex_to_dword(AC, DwordAC),
+	md5_transform_list(Trans, A, B, C, D, XValue, RotValue, DwordAC, Result),
+	NewRound is Round + 1,
+	md5_transform_states(NewRound, [ D, Result, B, C ], X, NewStates).
+
+test_md5_transform_states :-
+	md5_init(States),
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	conv_hex_to_dword('00000080', One), % terminator tekstu
+	conv_hex_to_dword('00000020', Two), % 32 bity slowa 'TEST'
+	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs],
+	md5_transform_states_decoded(States, DwordList, [S0,S1,S2,S3]),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+
+% jeszcze nie dziala, zawiesza sie
+test_md5_transform_states_reverse :-
+	md5_init(States),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3),
+	md5_transform_states_decoded(States, DwordList, [S0,S1,S2,S3]),
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	conv_hex_to_dword('00000080', One), % terminator tekstu
+	conv_hex_to_dword('00000020', Two), % 32 bity slowa 'TEST'
+	DwordList = [Test,One,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Two,Zs].
+
+% md5_update(
+%    States, NewStates,
+%    Buffer, NewBuffer,
+%    Input, InputLen,
+%    InCount0, OutCount0,
+%    InCount1, OutCount1).
+md5_update(States, States, Buffer, NewBuffer, Input, InputLen0, BitCount, NewBitCount) :-
+	byte_dec2bin(InputLen, InputLen0),
+	Index is (BitCount // 8) mod 64,
+	PartLen is 64 - Index,
+	InputLen < PartLen,
+	NewBitCount is BitCount + InputLen * 8,
+	byte_copy(Buffer, Index, Input, InputLen, NewBuffer),
+	!.
+
+md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen0, BitCount, NewBitCount) :-
+	byte_dec2bin(InputLen, InputLen0),
+	Index is (BitCount // 8) mod 64,
+	PartLen is 64 - Index,
+	InputLen >= PartLen,
+	NewBitCount is BitCount + InputLen * 8,
+	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer),
+	md5_transform_states(States, TmpBuffer, NewStates),
+	NewPartLen is PartLen * 8,
+	divide_list(NewPartLen, Input, _, NewInput),
+	Len is InputLen - PartLen,
+	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer),
+	!.
+
+md5_update_partlen_loop(PartLen, InputLen, PartLen) :-
+	PartLen >= InputLen + 63.
+md5_update_partlen_loop(PartLen, InputLen, I) :-
+	PartLen < InputLen - 63,
+	NewI is PartLen + 64,
+	md5_update_partlen_loop(NewI, InputLen, I).
+
+test_md5_update :-
+	test_md5_update_1,
+	test_md5_update_1_reverse,
+	test_md5_update_2.
+
+test_md5_update_1 :-
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer),
+	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
+	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32).
+
+% niedoskonaly test
+% sprawdza tylko dzialanie odwrotne dla braku bufora
+% a nie sprawdza dzialania przy braku licznikow
+test_md5_update_1_reverse :-
+	char_to_dword('TEST', Test),
+	conv_hex_to_dword('00000000', Zs),  % padding
+	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
+	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32),
+	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer).
+
+test_md5_update_2 :-
+	md5_init(States),
+	char_to_dword('TSET', Test),
+	conv_hex_to_dword('00000000', Zs),
+	conv_hex_to_dword('80000000', Temp),
+	conv_hex_to_dword('20000000', Bits),
+	append([Bits, Zs], AddBits),
+	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,  Zs,Zs], Buffer),
+	append([Test,Temp,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Bits,Zs], NewBuffer),
+	md5_update(States, [S0, S1, S2, S3], Buffer, NewBuffer, AddBits, 8, 448, 512),
+	conv_hex_to_dword('4bd93b03', S0),
+	conv_hex_to_dword('e4d76811', S1),
+	conv_hex_to_dword('c344d6f0', S2),
+	conv_hex_to_dword('bf355ec9', S3).
+
+% w miare odwracalna relacja, aczkolwiek wady takie jak przy
+% buffer/5
+% znana wada: przy odwracaniu potafi znalezc rozwiazanie np.
+% ByteIndex = 1, Data = [], ByteLen = 0
+% chociaz nie powinno to powodowac zadnych dalszych problemow
+byte_copy(BitList, ByteIndex, Data, ByteLen, NewBuffer) :-
+	(   nonvar(BitList) ->
+	Index is ByteIndex * 8,
+	Len is ByteLen * 8,
+	    buffer(BitList, Index, Data, Len, NewBuffer)
+	;   buffer(BitList, Index, Data, Len, NewBuffer),
+	    ByteIndex is Index / 8,
+	    ByteLen is Len / 8,
+	    integer(ByteIndex),
+	    integer(ByteLen)
+	).
+
+
+test_byte_copy :-
+	byte_copy([1,1,1,1,0,0,0,0, 1,1,1,1,0,0,0,0], 1, [1,0,1,0, 1,0,1,0], 1, X),
+	X = [1,1,1,1,0,0,0,0, 1,0,1,0,1,0,1,0].
+
+% wydaje sie byc w miare poprawna relacja
+% tzn. wymagana jest obecnosc co najmniej jednego: Buffer lub NewBuffer
+% aczkolwiek z liczeniu "od przodu" wymagana jest dlugosc danych
+% a w liczeniu "od tylu" zaklada sie, ze dlugosc Data wynosi dokladnie
+% DataLen, co nie zawsze jest prawda (np. gdy wycinamy fragment z
+% Paddingu)
+
+buffer(Buffer, Index, Data, DataLen, NewBuffer) :-
+	(   nonvar(Buffer) ->
+	divide_list(Index, Buffer, Left, CenterAndRight),
+	divide_list(DataLen, CenterAndRight, _, Right),
+	divide_list(DataLen, Data, ProperData, _),
+	append( [Left, ProperData, Right], NewBuffer)
+	;
+	divide_list(Index, NewBuffer, Left, CenterAndRight),
+	divide_list(DataLen, CenterAndRight, Data, Right),
+	length(OrigData, DataLen),
+	append( [Left, OrigData, Right], Buffer )
+	).
+
+test_buffer :-
+	buffer([1,2,3,4,5], 2, [6,7], 2, X),
+	X = [1,2,6,7,5].
+
+
+addx :-
+	A = [0,1,0,1,1,0,0,1,1,0,1],
+	print('A  = '), print(A), nl,
+	B = [0,0,0,1,1,0,1,0,1,0,1],
+	print('B  = '), print(B), nl,
+	add_list(A, B, S, _),
+	print('S  = '), print(S), nl, nl,
+	and_list(A, B, Top),
+	print('a  = '), print(Top), nl,
+	or_list(A, B, Bottom),
+	print('b  = '), print(Bottom), nl, nl,
+        rol_list(Top, RTop),
+	xor_list(Top, RTop, Tmp1),
+	and_list(Tmp1, Top, C0),
+	% tam, gdzie w C0 jest 1, tam w Sumie na pewno bedzie 0
+	print('C0 = '), print(C0), nl,
+	and_list(Top, RTop, C1),
+	% tam, gdzie w C1 jest 1, tam w Sumie na penwo bedzie 1
+	print('C1 = '), print(C1), nl,
+	not_list(A, NotA),
+	not_list(B, NotB),
+	and_list(NotA, NotB, PossibleC),
+	print('CP = '), print(PossibleC), nl.
+
+
+
 
 
 
