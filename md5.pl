@@ -1,3 +1,5 @@
+:- use_module(library(clpb)).
+
 % do ewentualnego pozniejszego wykorzystania
 bit(0).
 bit(1).
@@ -12,47 +14,10 @@ data(Type, Storage) :-
 	data_type(Type, Length),
 	functor(Storage, bits, Length).
 
-% bitlist/1, relacja prawdziwa, gdy (1) jest lista bitow
-bitlist([]).
-bitlist([ B | List ]) :- bit(B), bitlist(List).
-% bitlist/2, relacja prawdziwa, gdy (1) jest lista bitow o dlugosci (2)
-bitlist([], 0).
-bitlist([ B | List ], Acc) :- bit(B), bitlist(List, OldAcc), Acc is OldAcc + 1.
-% and (A, B, Result) realizuje Result = A and B
-and(0, 0, 0).
-and(0, 1, 0).
-and(1, 0, 0).
-and(1, 1, 1).
-% or (A, B, Result) realizuje Result = A or B
-or(0, 0, 0).
-or(0, 1, 1).
-or(1, 0, 1).
-or(1, 1, 1).
-% xor (A, B, Result) realizuje Result = A xor B
-xor(0, 0, 0).
-xor(0, 1, 1).
-xor(1, 0, 1).
-xor(1, 1, 0).
-% not (A, Result) realizuje Result = not A
-not(0, 1).
-not(1, 0).
 % add (A, B, Sum, NextCarry) realizuje sume dwoch bitow
-% add(A, B, S, C) :- xor(A, B, S), and(A, B, C).
-add(0, 0, 0, 0).
-add(0, 1, 1, 0).
-add(1, 0, 1, 0).
-add(1, 1, 0, 1).
+add(A, B, S, C) :- sat(A#B=:=S), sat(A*B=:=C).
 % add (A, B, PrevCarry, Sum, NextCarry) realizuje sume dwoch bitow
-% add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), or(C1, C2, C).
-% czy ostatni OR mo¿e byæ zamieniony na XOR?
-add(0, 0, 0, 0, 0).
-add(0, 1, 0, 1, 0).
-add(1, 0, 0, 1, 0).
-add(1, 1, 0, 0, 1).
-add(0, 0, 1, 1, 0).
-add(0, 1, 1, 0, 1).
-add(1, 0, 1, 0, 1).
-add(1, 1, 1, 1, 1).
+add(A, B, T, S, C) :- add(A, B, S1, C1), add(S1, T, S, C2), sat(C1+C2=:=C).
 
 % true relation
 add_list( [ A ], [ B ], [ S ], C ) :- add(A, B, S, C).
@@ -60,36 +25,25 @@ add_list( [ A | AT ], [ B | BT ], [ S | ST ], C ) :-
 	add(A, B, Prev, S, C),
 	add_list(AT, BT, ST, Prev).
 
-add_bits( A, B, Sum, bits(Carry) ) :-
-        A = data(Type, ABits),
-	B = data(Type, BBits),
-	Sum = data(Type, SBits),
-	data_type(Type, Length),
-	add_bits(ABits, BBits, SBits, 0, Carry, Length).
-add_bits(_, _, _, C, C, 0).
-add_bits(A, B, S, P, NewC, I) :-
-	arg(I, A, AV),
-	arg(I, B, BV),
-	arg(I, S, SV),
-	NewI is I - 1,
-	add(AV, BV, P, SV, C),
-	add_bits(A, B, S, C, NewC, NewI).
+% true relation
+and_list([ X ], [ Y ], [ Z ]) :- sat(X*Y=:=Z).
+and_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :-
+	sat(X*Y=:=Z), and_list(XT, YT, ZT).
 
 % true relation
-and_list([ X ], [ Y ], [ Z ]) :- and(X, Y, Z).
-and_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- and(X, Y, Z), and_list(XT, YT, ZT).
+or_list([ X ], [ Y ], [ Z ]) :- sat(X+Y=:=Z).
+or_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :-
+	sat(X+Y=:=Z), or_list(XT, YT, ZT).
 
 % true relation
-or_list([ X ], [ Y ], [ Z ]) :- or(X, Y, Z).
-or_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- or(X, Y, Z), or_list(XT, YT, ZT).
+xor_list([ X ], [ Y ], [ Z ]) :- sat(X#Y=:=Z).
+xor_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :-
+	sat(X#Y=:=Z), xor_list(XT, YT, ZT).
 
 % true relation
-xor_list([ X ], [ Y ], [ Z ]) :- xor(X, Y, Z).
-xor_list([ X | XT ], [ Y | YT ], [ Z | ZT ]) :- xor(X, Y, Z), xor_list(XT, YT, ZT).
-
-% true relation
-not_list([ X ], [ Y ]) :- not(X, Y).
-not_list([ X | XT ], [ Y | YT ]) :- not(X, Y), not_list(XT, YT).
+not_list([ X ], [ Y ]) :- sat(X =:= ~Y).
+not_list([ X | XT ], [ Y | YT ]) :-
+	sat(X =:= ~Y), not_list(XT, YT).
 
 % FALSE relation
 trim_list( [ 0 | List ], TrimmedList ) :- trim_list( List, TrimmedList).
@@ -213,7 +167,7 @@ run_tests :-
 	run_test(test_md5),
 	!.
 
-run_test(Test) :- print(Test), nl, call(Test), !.
+run_test(Test) :- print(Test), nl, call(time(Test)), !.
 
 test_conv_hex_to_dword :-
 	conv_hex_to_dword('67452301', A),
@@ -263,7 +217,7 @@ demo_md5 :-
 	!.
 
 test_md5 :-
-	md5("TEST", [S0, S1, S2, S3]),
+	md5(`TEST`, [S0, S1, S2, S3]),
 	conv_hex_to_dword('4bd93b03', S0),
 	conv_hex_to_dword('e4d76811', S1),
 	conv_hex_to_dword('c344d6f0', S2),
@@ -653,23 +607,6 @@ add(1,1,1,1,0,1,1,0,1).
 add(1,1,1,1,1,0,1,1,0).
 add(1,1,1,1,1,1,1,1,1).
 
-encode(0, 0, 0, 0, [0, 0, 0]).
-encode(0, 0, 0, 1, [0, 0, 1]).
-encode(0, 0, 1, 0, [0, 0, 1]).
-encode(0, 1, 0, 0, [0, 0, 1]).
-encode(1, 0, 0, 0, [0, 0, 1]).
-encode(0, 0, 1, 1, [0, 1, 0]).
-encode(0, 1, 0, 1, [0, 1, 0]).
-encode(1, 0, 0, 1, [0, 1, 0]).
-encode(0, 1, 1, 0, [0, 1, 0]).
-encode(1, 0, 1, 0, [0, 1, 0]).
-encode(1, 1, 0, 0, [0, 1, 0]).
-encode(0, 1, 1, 1, [0, 1, 1]).
-encode(1, 0, 1, 1, [0, 1, 1]).
-encode(1, 1, 0, 1, [0, 1, 1]).
-encode(1, 1, 1, 0, [0, 1, 1]).
-encode(1, 1, 1, 1, [1, 0, 0]).
-
 % dlaczego backtracking sie tutaj nie zatrzymuje, ale bada dodatkowe
 % przypadki?
 add_list( [ I1 ], [ I2 ], [ I3 ], [ I4 ], C1, C2, [ S ]) :- add(I1, I2, I3, I4, 0, 0, C1, C2, S).
@@ -677,29 +614,18 @@ add_list( [ I1 | L1 ], [ I2 | L2 ], [ I3 | L3 ], [ I4 | L4 ], C1, C2, [ S | ST ]
 	add(I1, I2, I3, I4, PC1, PC2, C1, C2, S),
 	add_list(L1, L2, L3, L4, PC1, PC2, ST).
 
-% wszystko sie potencjalnie sprowdza do wykonania optymalnej prawdziwej
-% relacji dodawania czterech 32-bitowych cyfr
-%
-add_list_2( [ I1 ], [ I2 ], [ I3 ], [ I4 ], C1, C2, [ S ]) :-
-	encode(I1, I2, I3, I4, [C1, C2, S]).
-add_list_2( [ I1 | L1 ], [ I2 | L2 ], [ I3 | L3 ], [ I4 | L4 ], C1, C2, [ S | ST ]) :-
-	encode(I1, I2, I3, I4, TMP),
-	add_list(TMP, [0, PC1, PC2], [C1, C2, S], _),
-	add_list_2(L1, L2, L3, L4, PC1, PC2, ST).
-
 % zlozona transformacja - makra FF, GG, HH, II
 % zaimplementowane dzialanie odwrotne, ale niesprawdzone
 % bo strasznie czasochlonna petla
 md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	(   var(Result) ->
 	md5_transform_list(Trans, B, C, D, F),
-	%add_list(A, F, X, AC, _, _, Sum), % 1362 inferences
-	add_list_2(A, F, X, AC, _, _, Sum), % 2155 inferences
+	add_list(A, F, X, AC, _, _, Sum),
 	dword_rotate_left(S, Sum, Rotated),
 	add_list(Rotated, B, Result, _)
 	;   add_list(Rotated, B, Result, _),
 	    dword_rotate_left(S, Sum, Rotated),
-	    add_list_2(A, F, X, AC, _, _, Sum),
+	    add_list(A, F, X, AC, _, _, Sum),
 	    md5_transform_list(Trans, B, C, D, F)
 	).
 
@@ -1011,31 +937,6 @@ buffer(Buffer, Index, Data, DataLen, NewBuffer) :-
 test_buffer :-
 	buffer([1,2,3,4,5], 2, [6,7], 2, X),
 	X = [1,2,6,7,5].
-
-
-addx :-
-	A = [0,1,0,1,1,0,0,1,1,0,1],
-	print('A  = '), print(A), nl,
-	B = [0,0,0,1,1,0,1,0,1,0,1],
-	print('B  = '), print(B), nl,
-	add_list(A, B, S, _),
-	print('S  = '), print(S), nl, nl,
-	and_list(A, B, Top),
-	print('a  = '), print(Top), nl,
-	or_list(A, B, Bottom),
-	print('b  = '), print(Bottom), nl, nl,
-        rol_list(Top, RTop),
-	xor_list(Top, RTop, Tmp1),
-	and_list(Tmp1, Top, C0),
-	% tam, gdzie w C0 jest 1, tam w Sumie na pewno bedzie 0
-	print('C0 = '), print(C0), nl,
-	and_list(Top, RTop, C1),
-	% tam, gdzie w C1 jest 1, tam w Sumie na penwo bedzie 1
-	print('C1 = '), print(C1), nl,
-	not_list(A, NotA),
-	not_list(B, NotB),
-	and_list(NotA, NotB, PossibleC),
-	print('CP = '), print(PossibleC), nl.
 
 
 
