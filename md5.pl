@@ -1,9 +1,3 @@
-% md5
-% wersja 1 - prolog bez CLP, implementacja raczej niepelna relacja
-% wersja 2 - prolog z CLP, pelne relacje, ale trudne etykietowanie
-% wersja 3 - dalsze zmiany w logice
-% w22 - przystosowanie do SWI-Prolog 7.1.14
-
 :- use_module(library(clpfd)).
 
 % return 1 if X is 0 or return 0 if X is nonzero
@@ -75,6 +69,12 @@ xor0(A, B, Xor) :-
 % test_md5_reverse przy pelnej optymalizacji: ?
 o_xor0(A, B, Xor) :-
 	Xor #= ((1 + (A mod 2)*2)*B - 3*A) mod 4.
+
+o_xor0(A, B, Xor) :-
+	3*Xor #= 3*A + 3*B - 83*A*B + 81*A*(B^2) - 18*A*(B^3) + 81*(A^2)*B - 81*(A^2)*(B^2) + 18*(A^2)*(B^3) - 18*(A^3)*B + 18*(A^3)*(B^2) - 4*(A^3)*(B^3).
+
+o_xor0(A, B, Xor) :-
+	6*Xor #= (1-A)*(2-A)*(3-A)*(A+B) - A*(1-A)*(3-A)*(A+B)*3 + A*(1-A)*(2-A)*(A-B) + A*(2-A)*(3-A)*(A-B)*3 - B*(1-B)*(3-B)*A*(3-A)*(6-4*A)*3 + B*(1-B)*(2-B)*A*(3-A)*(6-4*A)*3.
 
 test_xor :-
 	time(test_xor_1),
