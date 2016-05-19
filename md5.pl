@@ -174,7 +174,7 @@ run_tests :-
 	run_test(test_md5),
 	!.
 
-run_test(Test) :- print(Test), nl, call(Test), !.
+run_test(Test) :- print(Test), nl, call(time(Test)), !.
 
 test_conv_hex_to_dword :-
 	conv_hex_to_dword('67452301', A),
@@ -443,38 +443,10 @@ md5_round_constant(64, i, s44, 'eb86d391', 9).
 % #define I(x, y, z) ((y) ^ ((x) | (~z)))
 % md5_transform(type, x, y, z, result).
 
-md5_transform(f, 0, 0, 0, 0).
-md5_transform(f, 0, 0, 1, 1).
-md5_transform(f, 0, 1, 0, 0).
-md5_transform(f, 0, 1, 1, 1).
-md5_transform(f, 1, 0, 0, 0).
-md5_transform(f, 1, 0, 1, 0).
-md5_transform(f, 1, 1, 0, 1).
-md5_transform(f, 1, 1, 1, 1).
-md5_transform(g, 0, 0, 0, 0).
-md5_transform(g, 0, 0, 1, 0).
-md5_transform(g, 0, 1, 0, 1).
-md5_transform(g, 0, 1, 1, 0).
-md5_transform(g, 1, 0, 0, 0).
-md5_transform(g, 1, 0, 1, 1).
-md5_transform(g, 1, 1, 0, 1).
-md5_transform(g, 1, 1, 1, 1).
-md5_transform(h, 0, 0, 0, 0).
-md5_transform(h, 0, 0, 1, 1).
-md5_transform(h, 0, 1, 0, 1).
-md5_transform(h, 0, 1, 1, 0).
-md5_transform(h, 1, 0, 0, 1).
-md5_transform(h, 1, 0, 1, 0).
-md5_transform(h, 1, 1, 0, 0).
-md5_transform(h, 1, 1, 1, 1).
-md5_transform(i, 0, 0, 0, 1).
-md5_transform(i, 0, 0, 1, 0).
-md5_transform(i, 0, 1, 0, 0).
-md5_transform(i, 0, 1, 1, 1).
-md5_transform(i, 1, 0, 0, 1).
-md5_transform(i, 1, 0, 1, 1).
-md5_transform(i, 1, 1, 0, 0).
-md5_transform(i, 1, 1, 1, 0).
+md5_transform(f, X, Y, Z, Res) :- sat(Res =:= (X*Y)+((~X)*Z)).
+md5_transform(g, X, Y, Z, Res) :- sat(Res =:= (X*Z)+(Y*(~Z))).
+md5_transform(h, X, Y, Z, Res) :- sat(Res =:= X#Y#Z).
+md5_transform(i, X, Y, Z, Res) :- sat(Res =:= Y#(X+(~Z))).
 
 % pojedyncza transformacja - makra F, G, H, I
 md5_transform_list(Trans, [ X ], [ Y ], [ Z ], [ R ]) :- md5_transform(Trans, X, Y, Z, R).
@@ -787,8 +759,13 @@ test_md5_update_1_reverse :-
 	char_to_dword('TEST', Test),
 	conv_hex_to_dword('00000000', Zs),  % padding
 	append([Test,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], NewBuffer),
-	md5_update(_, _, Buffer, NewBuffer, Test, 4, 0, 32),
-	append([Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs,Zs], Buffer).
+	% 4, 0, 32
+	md5_update(_, _, Buffer, NewBuffer, Test,
+		   [0,0,0,0, 0,1,0,0],
+		   [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0],
+		   [0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0]),
+	length(Buffer, 512),
+	maplist(=(0), Buffer).
 
 test_md5_update_2 :-
 	md5_init(States),
