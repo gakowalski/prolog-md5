@@ -25,14 +25,15 @@ dword_or(A, B, Or) :-
 	Or #>= B,
 	dword_xor(A, B, Xor),
 	Or #= (A + B + Xor)//2.
-dword_xor(A, B, Xor) :-
+o_dword_xor(A, B, Xor) :-
 	% specyficzna optymalizacja: predykat jest najwydajniejszy w postaci (var, nonvar, var)
 	% oraz (nonvar, nonvar, var) niz w innych kombinacjach, a jego argumenty sa zamienne
 	% wiec wystarczy je ulozyc w najlepszej kolejnosci
 	var(B) -> ( nonvar(Xor) -> dword_xor1(A, Xor, B, 32) ; dword_xor1(B, A, Xor, 32));
 	(   var(Xor) -> dword_xor1(A, B, Xor, 32) ; dword_xor1(Xor, B, A, 32) ).
-o_dword_xor(A, B, Xor) :-
+dword_xor(A, B, Xor) :-
 	dword_xor1(A, B, Xor, 32).
+	%dword_xor32(A, B, Xor).
 dword_not(A, NotA) :-
 	NotA #= 0xFFFFFFFF - A.
 
@@ -48,6 +49,7 @@ dword_xor1(A, B, Sum, 0, Xor) :-
 	xor0(A, B, Tmp),
 	Xor #= Sum + Tmp.
 dword_xor1(A, B, Sum, Count, Xor) :-
+	Count > 0,
 	P is 4^Count,
 	X #= A // P,
 	Y #= B // P,
@@ -56,6 +58,39 @@ dword_xor1(A, B, Sum, Count, Xor) :-
 	NewSum #= Sum + P*Tmp,
 	NewCount is Count - 1,
 	dword_xor1(A, B, NewSum, NewCount, Xor).
+
+dword_xor32(A, B, X) :-
+	Limit is 2^32-1,
+	[A, B, X] ins 0..Limit,
+	[A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16] ins 0..3,
+	[B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16] ins 0..3,
+	[X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16] ins 0..3,
+	A #= A1 + A2*2 + A3*2^4 + A4*2^6 + A5*2^8 + A6*2^10 + A7*2^12 + A8*2^14
+	+ A9*2^16 + A10*2^18 + A11*2^20 + A12*2^22 + A13*2^24 + A14*2^26
+	+ A15*2^28 + A16*2^30,
+	B #= B1 + B2*2 + B3*2^4 + B4*2^6 + B5*2^8 + B6*2^10 + B7*2^12 + B8*2^14
+	+ B9*2^16 + B10*2^18 + B11*2^20 + B12*2^22 + B13*2^24 + B14*2^26
+	+ B15*2^28 + B16*2^30,
+	X #= X1 + X2*2 + X3*2^4 + X4*2^6 + X5*2^8 + X6*2^10 + X7*2^12 + X8*2^14
+	+ X9*2^16 + X10*2^18 + X11*2^20 + X12*2^22 + X13*2^24 + X14*2^26
+	+ X15*2^28 + X16*2^30,
+	xor0(A1, B1, X1),
+	xor0(A2, B2, X2),
+	xor0(A3, B3, X3),
+	xor0(A4, B4, X4),
+	xor0(A5, B5, X5),
+	xor0(A6, B6, X6),
+	xor0(A7, B7, X7),
+	xor0(A8, B8, X8),
+	xor0(A9, B9, X9),
+	xor0(A10, B10, X10),
+	xor0(A11, B11, X11),
+	xor0(A12, B12, X12),
+	xor0(A13, B13, X13),
+	xor0(A14, B14, X14),
+	xor0(A15, B15, X15),
+	xor0(A16, B16, X16).
+
 % w przegladzie 0 do 0x2FFFF inferencji 17 m
 % preferowane wywolanie: (v,n,v) oraz (n,n,v)
 % test_md5 przy pelnej optymalizacji: 163 k
@@ -75,6 +110,9 @@ o_xor0(A, B, Xor) :-
 
 o_xor0(A, B, Xor) :-
 	6*Xor #= (1-A)*(2-A)*(3-A)*(A+B) - A*(1-A)*(3-A)*(A+B)*3 + A*(1-A)*(2-A)*(A-B) + A*(2-A)*(3-A)*(A-B)*3 - B*(1-B)*(3-B)*A*(3-A)*(6-4*A)*3 + B*(1-B)*(2-B)*A*(3-A)*(6-4*A)*3.
+
+o_xor0(A, B, Xor) :-
+	2*Xor #= abs(A-B) * (2+A*A*B*B - 3*A*B*B - 3*A*A*B + 9*A*B).
 
 test_xor :-
 	time(test_xor_1),
