@@ -7,6 +7,12 @@ if_lesser(X, C, Result) :- Result in 0..1, Result * (C-X+1*0^(C-X)) #= (C - min(
 if_lesser_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
 if_greater_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - max(X,C))/(C-X+1*0^(C-X))).
 
+% return 0 if X is outside of L..H (L and H included)
+% return nonzero if otherwise
+% there might be special cases when 0 is returned on success
+if_between(X, L, H, Result) :-
+	Result #= (L-max(L,X))*(H-min(H,X)).
+
 nearest_powers_of_2(X, Low, High) :-
 	X in 0..0xFFFFFFFF,
 	Low in 0..31,
@@ -20,107 +26,84 @@ dword_and(A, B, And) :-
 	And #=< B,
 	dword_xor(A, B, Xor),
 	And #= (A + B - Xor)//2.
+
 dword_or(A, B, Or) :-
 	Or #>= A,
 	Or #>= B,
 	dword_xor(A, B, Xor),
 	Or #= (A + B + Xor)//2.
-o_dword_xor(A, B, Xor) :-
-	% specyficzna optymalizacja: predykat jest najwydajniejszy w postaci (var, nonvar, var)
-	% oraz (nonvar, nonvar, var) niz w innych kombinacjach, a jego argumenty sa zamienne
-	% wiec wystarczy je ulozyc w najlepszej kolejnosci
-	var(B) -> ( nonvar(Xor) -> dword_xor1(A, Xor, B, 32) ; dword_xor1(B, A, Xor, 32));
-	(   var(Xor) -> dword_xor1(A, B, Xor, 32) ; dword_xor1(Xor, B, A, 32) ).
-dword_xor(A, B, Xor) :-
-	dword_xor1(A, B, Xor, 32).
-	%dword_xor32(A, B, Xor).
+
 dword_not(A, NotA) :-
 	NotA #= 0xFFFFFFFF - A.
 
-dword_xor1(A, B, Xor, Bits) :-
-	integer(Bits),
-	Limit is 2^Bits - 1,
-	[A, B, Xor] ins 0..Limit,
-	Count is (Bits // 2) - 1,
-	dword_xor1(A, B, 0, Count, Xor),
-	!. % odciecie poniewaz pracujemy na ograniczeniach, a te sa wyliczane tylko raz
-dword_xor1(A, B, Sum, 0, Xor) :-
-	% Xor #= Sum + ((A + B*((-1)^A)) mod 4).
-	xor0(A, B, Tmp),
-	Xor #= Sum + Tmp.
-dword_xor1(A, B, Sum, Count, Xor) :-
-	Count > 0,
-	P is 4^Count,
-	X #= A // P,
-	Y #= B // P,
-	% NewSum #= Sum + P*((X + Y*((-1)^X)) mod 4),
-	xor0(X, Y, Tmp),
-	NewSum #= Sum + P*Tmp,
-	NewCount is Count - 1,
-	dword_xor1(A, B, NewSum, NewCount, Xor).
-
-dword_xor32(A, B, X) :-
-	Limit is 2^32-1,
+% dword_xor/3
+% True if X is equal to A xor B and A, B and C are 32-bit unsigned
+% integers.
+dword_xor(A, B, X) :-
+	Limit is (2^32)-1,
 	[A, B, X] ins 0..Limit,
-	[A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16] ins 0..3,
-	[B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16] ins 0..3,
-	[X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16] ins 0..3,
-	A #= A1 + A2*2 + A3*2^4 + A4*2^6 + A5*2^8 + A6*2^10 + A7*2^12 + A8*2^14
-	+ A9*2^16 + A10*2^18 + A11*2^20 + A12*2^22 + A13*2^24 + A14*2^26
-	+ A15*2^28 + A16*2^30,
-	B #= B1 + B2*2 + B3*2^4 + B4*2^6 + B5*2^8 + B6*2^10 + B7*2^12 + B8*2^14
-	+ B9*2^16 + B10*2^18 + B11*2^20 + B12*2^22 + B13*2^24 + B14*2^26
-	+ B15*2^28 + B16*2^30,
-	X #= X1 + X2*2 + X3*2^4 + X4*2^6 + X5*2^8 + X6*2^10 + X7*2^12 + X8*2^14
-	+ X9*2^16 + X10*2^18 + X11*2^20 + X12*2^22 + X13*2^24 + X14*2^26
-	+ X15*2^28 + X16*2^30,
-	xor0(A1, B1, X1),
-	xor0(A2, B2, X2),
-	xor0(A3, B3, X3),
-	xor0(A4, B4, X4),
-	xor0(A5, B5, X5),
-	xor0(A6, B6, X6),
-	xor0(A7, B7, X7),
-	xor0(A8, B8, X8),
-	xor0(A9, B9, X9),
-	xor0(A10, B10, X10),
-	xor0(A11, B11, X11),
-	xor0(A12, B12, X12),
-	xor0(A13, B13, X13),
-	xor0(A14, B14, X14),
-	xor0(A15, B15, X15),
-	xor0(A16, B16, X16).
+	length(AParts, 16),
+	length(BParts, 16),
+	length(XParts, 16),
+	AParts ins 0..3,
+	BParts ins 0..3,
+	XParts ins 0..3,
+	T = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864, 268435456, 1073741824],
+	scalar_product(T, AParts, #=, A),
+	scalar_product(T, BParts, #=, B),
+	scalar_product(T, XParts, #=, X),
+	maplist(xor_variant_6, AParts, BParts, XParts).
 
-% w przegladzie 0 do 0x2FFFF inferencji 17 m
-% preferowane wywolanie: (v,n,v) oraz (n,n,v)
-% test_md5 przy pelnej optymalizacji: 163 k
-% test_md5_reverse przy pelnej optymalizacji: 5 333 k
-xor0(A, B, Xor) :-
+% XOR variants benchmark:
+% variant_0 - 6 sec
+% variant_1 - 6.7 sec
+% variant_5 - 8 sec
+
+% THE BEST NOW
+% benchmark: 2.5, 6.6 | 8, 6, 7 | 0, 0, 0
+xor_variant_0(A, B, Xor) :-
 	Xor #= ((A + B*((-1)^A)) mod 4).
 
-% w przegladzie 0 do 0x2FFFF inferencji 21 m
-% preferowane wywolanie: (n,v,v) oraz (n,n,v)
-% test_md5 przy pelnej optymalizacji: ?
-% test_md5_reverse przy pelnej optymalizacji: ?
-o_xor0(A, B, Xor) :-
+% benchmark: 2.5, ? | 16.7, 7.8, 6.7 | 0, 0, 0
+xor_variant_1(A, B, Xor) :-
 	Xor #= ((1 + (A mod 2)*2)*B - 3*A) mod 4.
 
-o_xor0(A, B, Xor) :-
+% benchmark: 2.4, ? | * 38, 33 | 0, 0, 0
+xor_variant_2(A, B, Xor) :-
 	3*Xor #= 3*A + 3*B - 83*A*B + 81*A*(B^2) - 18*A*(B^3) + 81*(A^2)*B - 81*(A^2)*(B^2) + 18*(A^2)*(B^3) - 18*(A^3)*B + 18*(A^3)*(B^2) - 4*(A^3)*(B^3).
 
-o_xor0(A, B, Xor) :-
+% benchmark: 2.5, ? | 233, 33, 19, | 0, 0, 0
+xor_variant_3(A, B, Xor) :-
 	6*Xor #= (1-A)*(2-A)*(3-A)*(A+B) - 3*A*(1-A)*(3-A)*(A+B) + A*(1-A)*(2-A)*(A-B) + 3*A*(2-A)*(3-A)*(A-B) - 3*B*(1-B)*(3-B)*A*(3-A)*(6-4*A) + B*(1-B)*(2-B)*A*(3-A)*(6-4*A).
 
-o_xor0(A, B, Xor) :-
+% benchmark: 2.5, ? | *, 19, 16 | 0, 0, 0
+xor_variant_4(A, B, Xor) :-
 	2*Xor #= abs(A-B) * (2+A*A*B*B - 3*A*B*B - 3*A*A*B + 9*A*B).
 
-test_xor :-
-	time(test_xor_1),
-	time(test_xor_2),
-	time(test_xor_3),
-	time(test_xor_4),
-	time(test_xor_5),
-	time(test_xor_6).
+% benchmark: 2.6, ? | 9, 8, 8 | 0, 0, 0
+xor_variant_5(A, B, Xor) :-
+	Xor #= abs(A-B) + 2*0^(2-A*B).
+
+% benchmark #2: 1.3, 15.5 | 119, 11, 11 | 0, 0, 0
+xor_variant_6(A, B, Xor) :-
+	M #= A*B,
+	2*Xor #= abs(A-B) * (M*(M-3*(A+B)+9)+2).
+
+test_benchmark(Test) :-
+	print(Test), time(Test).
+
+xor_benchmark :-
+	Battery = [
+	    test_md5,
+	    test_md5_reverse,
+	    test_xor_1,
+	    test_xor_2,
+	    test_xor_3,
+	    test_xor_4,
+	    test_xor_5,
+	    test_xor_6
+	],
+	maplist(test_benchmark, Battery).
 
 test_xor_1 :-
 	[A,B] ins 0..0x2FFF,
@@ -147,26 +130,6 @@ test_xor_6 :-
 	dword_xor(X, 0xFFF, 5),
 	findall(_, labeling([bisect], [X]), _).
 
-
-% czasy bez "bisect" dla dwoch nieznanych:
-% 1,211,356 inferences, 0,266 CPU in 0,250 seconds (106% CPU, 4560399 Lips)
-% 528,134 inferences, 0,063 CPU in 0,078 seconds (80% CPU, 8450144 Lips)
-% 490,866 inferences, 0,078 CPU in 0,063 seconds (125% CPU, 6283085 Lips)
-%
-% czasy z bisect dla dwoch nieznanych (X,Y,5), (X,5,Y), (5,X,Y):
-% % 434,156 inferences, 0,125 CPU in 0,109 seconds (114% CPU, 3473248 Lips)
-% 329,505 inferences, 0,063 CPU in 0,063 seconds (100% CPU, 5272080 Lips)
-% 402,798 inferences, 0,047 CPU in 0,063 seconds (75% CPU, 8593024 Lips)
-%
-% czasy z bisect dla jednej nieznanej:
-% 66,198 inferences, 0,016 CPU in 0,016 seconds (100% CPU, 4236672 Lips)
-% 56,437 inferences, 0,016 CPU in 0,016 seconds (100% CPU, 3611968 Lips)
-% 63,021 inferences, 0,016 CPU in 0,031 seconds (50% CPU, 4033344 Lips)
-%
-% dysproporcje dla starego dword_and:
-% 3,224,747,117 inferences, 490,469 CPU in 500,932 seconds (98% CPU, 6574827 Lips)
-% 18,230,375 inferences, 2,438 CPU in 2,594 seconds (94% CPU, 7479128 Lips)
-% 20,433,484 inferences, 2,969 CPU in 3,031 seconds (98% CPU, 6882858 Lips)
 
 %%
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
@@ -353,11 +316,6 @@ test_md5_transform_list_reverse_2 :-
 	D = 271733878,
 	labeling([ffc, bisect], [A,B,C,D,X]),
 	X = 1414743380.
-
-
-
-
-
 
 % md5_update(
 %    States, NewStates,
