@@ -1,25 +1,11 @@
 :- use_module(library(clpfd)).
-
-% return 1 if X is 0 or return 0 if X is nonzero
-if_zero(X, Result) :- Result in 0..1, Result #= 0^X.
-if_equal(X, C, Result) :- Result in 0..1, Result #= 0^(X-C).
-if_lesser(X, C, Result) :- Result in 0..1, Result * (C-X+1*0^(C-X)) #= (C - min(X,C)).
-if_lesser_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
-if_greater_old1(X, C, Result) :-  Result in 0..1, Result #= ((C - max(X,C))/(C-X+1*0^(C-X))).
-
-% return 0 if X is outside of L..H (L and H included)
-% return nonzero if otherwise
-% there might be special cases when 0 is returned on success
-if_between(X, L, H, Result) :-
-	Result #= (L-max(L,X))*(H-min(H,X)).
-
-nearest_powers_of_2(X, Low, High) :-
-	X in 0..0xFFFFFFFF,
-	Low in 0..31,
-	High in 1..32,
-	X #>= 2^Low,
-	X #=< 2^High,
-	Low + 1 #= High.
+:- use_module('conditionals.pl', [
+		  if_lesser/3,
+		  if_equal/3,
+		  if_even/2,
+		  if_odd/2,
+		  if_between/4
+	      ]).
 
 dword_and(A, B, And) :-
 	And #=< A,
@@ -39,7 +25,7 @@ dword_not(A, NotA) :-
 % dword_xor/3
 % True if X is equal to A xor B and A, B and C are 32-bit unsigned
 % integers.
-dword_xor(A, B, X) :-
+dword_xor_2bit(A, B, X) :-
 	Limit is (2^32)-1,
 	[A, B, X] ins 0..Limit,
 	length(AParts, 16),
@@ -52,7 +38,58 @@ dword_xor(A, B, X) :-
 	scalar_product(T, AParts, #=, A),
 	scalar_product(T, BParts, #=, B),
 	scalar_product(T, XParts, #=, X),
-	maplist(xor_variant_6, AParts, BParts, XParts).
+	maplist(xor_variant_2bit_0, AParts, BParts, XParts).
+
+dword_xor(A, B, X) :-
+	Limit is (2^32)-1,
+	[A, B, X] ins 0..Limit,
+	length(AParts, 11),
+	length(BParts, 11),
+	length(XParts, 11),
+	AParts ins 0..7,
+	BParts ins 0..7,
+	XParts ins 0..7,
+	%T = [2^0, 2^3, 2^6, 2^9, 2^12, 2^15, 2^18, 2^21, 2^24, 2^27, 2^30],
+	T = [1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728, 1073741824],
+	scalar_product(T, AParts, #=, A),
+	scalar_product(T, BParts, #=, B),
+	scalar_product(T, XParts, #=, X),
+	maplist(xor_variant_3bit_0, AParts, BParts, XParts).
+
+test_dword_xor :-
+	dword_xor(0x12345678,0x31415926,0x23750F5E).
+
+test_dword_xor_2bit :-
+	dword_xor_2bit(0x12345678,0x31415926,0x23750F5E).
+
+% benchmark #2: 0.9, 34 | *, 11, 11 |
+xor_variant_3bit_0(A, B, Xor) :-
+	Max #= max(A, B),
+	Min #= min(A, B),
+	if_even(Max, Is_Max_Even),
+	if_odd(Min, Is_Min_Even),
+	if_between(Max, 3, 6, Is_Max_Between),
+	if_between(Min, 1, 4, Is_Min_Between),
+	Xor #= abs(A-B) + Is_Max_Even*Is_Min_Even*2 + Is_Max_Between*Is_Min_Between*4.
+
+% not finished
+xor_variant_3bit_1(A, B, Xor) :-
+	Max #= max(A, B),
+	Min #= min(A, B),
+	Reversed_B #= (7-Max) mod 4,
+	xor_variant_2bit_0(Min, Reversed_B, Xor_2bit),
+	2*And #= Min + Reversed_B - Xor_2bit,
+	Xor #= abs(A-B) + 2*And.
+
+if_between_bits(X, B, Result) :-
+	L #= (2^B)-1,
+	H #= 2^(B+1),
+	if_between(X, L, H, Result).
+
+
+xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
+xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
+xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
 
 % XOR variants benchmark:
 % variant_0 - 6 sec
@@ -60,34 +97,36 @@ dword_xor(A, B, X) :-
 % variant_5 - 8 sec
 
 % THE BEST NOW
-% benchmark: 2.5, 6.6 | 8, 6, 7 | 0, 0, 0
-xor_variant_0(A, B, Xor) :-
+% benchmark #2: 1.1, 6.3 | 5.4, 3.2, 3.6 |
+xor_variant_2bit_0(A, B, Xor) :-
 	Xor #= ((A + B*((-1)^A)) mod 4).
 
-% benchmark: 2.5, ? | 16.7, 7.8, 6.7 | 0, 0, 0
-xor_variant_1(A, B, Xor) :-
+xor_variant_2bit_1(A, B, Xor) :-
 	Xor #= ((1 + (A mod 2)*2)*B - 3*A) mod 4.
 
-% benchmark: 2.4, ? | * 38, 33 | 0, 0, 0
-xor_variant_2(A, B, Xor) :-
+xor_variant_2bit_2(A, B, Xor) :-
 	3*Xor #= 3*A + 3*B - 83*A*B + 81*A*(B^2) - 18*A*(B^3) + 81*(A^2)*B - 81*(A^2)*(B^2) + 18*(A^2)*(B^3) - 18*(A^3)*B + 18*(A^3)*(B^2) - 4*(A^3)*(B^3).
 
-% benchmark: 2.5, ? | 233, 33, 19, | 0, 0, 0
-xor_variant_3(A, B, Xor) :-
+xor_variant_2bit_3(A, B, Xor) :-
 	6*Xor #= (1-A)*(2-A)*(3-A)*(A+B) - 3*A*(1-A)*(3-A)*(A+B) + A*(1-A)*(2-A)*(A-B) + 3*A*(2-A)*(3-A)*(A-B) - 3*B*(1-B)*(3-B)*A*(3-A)*(6-4*A) + B*(1-B)*(2-B)*A*(3-A)*(6-4*A).
 
-% benchmark: 2.5, ? | *, 19, 16 | 0, 0, 0
-xor_variant_4(A, B, Xor) :-
+xor_variant_2bit_4(A, B, Xor) :-
 	2*Xor #= abs(A-B) * (2+A*A*B*B - 3*A*B*B - 3*A*A*B + 9*A*B).
 
-% benchmark: 2.6, ? | 9, 8, 8 | 0, 0, 0
-xor_variant_5(A, B, Xor) :-
+% benchmark #2: 1.3, 11.7 | 5, 4.5, 4.7 | 0, 0, 0
+xor_variant_2bit_5(A, B, Xor) :-
 	Xor #= abs(A-B) + 2*0^(2-A*B).
 
 % benchmark #2: 1.3, 15.5 | 119, 11, 11 | 0, 0, 0
-xor_variant_6(A, B, Xor) :-
+xor_variant_2bit_6(A, B, Xor) :-
 	M #= A*B,
 	2*Xor #= abs(A-B) * (M*(M-3*(A+B)+9)+2).
+
+% benchmark #2: 1.1, 15.2 | 8.4, 7.3, 7.3 | 0, 0, 0
+xor_variant_2bit_7(A, B, Xor) :-
+	T #= A*B,
+	if_equal(T, 2, Is_Equal),
+	Xor #= abs(A-B) + 2*Is_Equal.
 
 test_benchmark(Test) :-
 	print(Test), time(Test).
@@ -103,7 +142,8 @@ xor_benchmark :-
 	    test_xor_5,
 	    test_xor_6
 	],
-	maplist(test_benchmark, Battery).
+	maplist(test_benchmark, Battery),
+	!.
 
 test_xor_1 :-
 	[A,B] ins 0..0x2FFF,
