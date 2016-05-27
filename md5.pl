@@ -1,5 +1,6 @@
 :- use_module(library(clpfd)).
 :- use_module('conditionals.pl', [
+		  if_lesser/3,
 		  if_greater_equal/3,
 		  if_equal/3,
 		  if_even/2,
@@ -26,7 +27,7 @@ dword_not(A, NotA) :-
 % True if X is equal to A xor B and A, B and C are 32-bit unsigned
 % integers.
 dword_xor(A, B, X) :-
-	dword_xor_2bit(A, B, X).
+	dword_xor_3bit(A, B, X).
 
 dword_xor_2bit(A, B, X) :-
 	Limit is (2^32)-1,
@@ -57,13 +58,19 @@ dword_xor_3bit(A, B, X) :-
 	scalar_product(T, AParts, #=, A),
 	scalar_product(T, BParts, #=, B),
 	scalar_product(T, XParts, #=, X),
-	maplist(xor_variant_3bit_0, AParts, BParts, XParts).
+	maplist(ultimate_xor, AParts, BParts, XParts).
 
 test_dword_xor :-
 	dword_xor(0x12345678,0x31415926,0x23750F5E).
 
 test_dword_xor_2bit :-
 	dword_xor_2bit(0x12345678,0x31415926,0x23750F5E).
+
+ultimate_xor(A, B, Xor) :-
+	xor_variant_2bit_0(A, B, Xor_Base),
+	if_greater_equal(A, 4, A2),
+	if_greater_equal(B, 4, B2),
+	Xor #= Xor_Base + abs(A2*4 - B2*4).
 
 % inferences: 5M, 156M |
 % secodns: 0.8, 27 |
@@ -84,6 +91,15 @@ xor_variant_3bit_1(A, B, Xor) :-
 	xor_variant_2bit_0(Min, Reversed_B, Xor_2bit),
 	2*And #= Min + Reversed_B - Xor_2bit,
 	Xor #= abs(A-B) + 2*And.
+
+% inferences: 6M, 113M | 140M, 40M, 32M | 19K, 76K, 88K
+% seconds: 0.84s, 19s | 18s, 5s, 5.5s,
+xor_Variant_3bit_2(A, B, Xor) :-
+	xor_variant_2bit_0(A, B, Xor_Base),
+	if_greater_equal(A, 4, A2),
+	if_greater_equal(B, 4, B2),
+	Xor #= Xor_Base + abs(A2*4 - B2*4).
+
 
 if_between_bits(X, B, Result) :-
 	L #= (2^B)-1,
@@ -268,6 +284,7 @@ md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 md5_bytes_to_dwords([], []).
 md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
 	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
+        %scalar_product([16777216,65536,256,1],[D0,D1,D2,D3],#=,Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
 % md5_transform_states/3
 % prawdziwa relacja

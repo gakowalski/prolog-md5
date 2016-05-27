@@ -24,6 +24,9 @@
 % - if_lesser_equal
 % - if_greater_equal
 % - if_even
+% - cplfd:max
+% - clpfd:min
+% = clpfd:abs
 
 % ============================================
 % LESSER, GREATER, LESSER_EQUAL, GREATER_EQUAL
@@ -49,7 +52,7 @@ if_greater(X, C, Result) :-
 	if_lesser_equal(X, C, Is_Lesser),
 	Result #= 1 - Is_Lesser.
 
-if_lesser_varian_0(X, C, Result) :-
+if_lesser_variant_0(X, C, Result) :-
 	Result in 0..1,
 	Result #= ((C - min(X,C))/(C-X+1*0^(C-X))).
 
@@ -117,6 +120,11 @@ test_if_equal :-
 if_zero(X, Result) :-
 	if_equal(X, 0, Result).
 
+if_zero_variant_0(X, Result) :-
+	A #= -1-X,
+	B #= 1-X,
+	Result * (-4) #= (A-abs(A)) * (B+abs(B)).
+
 if_nonzero(X, Result) :-
 	if_equal(X, 0, Is_Equal),
 	Result #= 1 - Is_Equal.
@@ -134,13 +142,32 @@ if_odd(X, Result) :-
 	2 * Result #= 1 - Is_Even.
 
 if_even_raw(X, Result) :-
-	% needs domain declaration
+	% needs domain declaration for Result
 	Result #= (-1)^X.
 
+% =============================
+% OTHER, NOT USED, EXPERIMENTAL
+% =============================
 
+internal_abs(X, Abs) :-
+	% needs domain declaration for Abs if possible
+	Abs #= max(X, -X).
 
+if_bit_set(X, 1, Set) :-
+	Set in 0..1,
+	if_odd(X, Set).
 
+if_bit_set(X, C, Set) :-
+	C > 1,
+	Set in 0..1,
+	if_odd(X, Is_Odd),
+        2*Y #= X - Is_Odd,
+        D is C-1,
+        if_bit_set(Y, D, Set).
 
+internal_mod_2(X, Mod) :-
+	Mod in 0..1,
+	2 * Mod #= 1+(-1)^(X+1).
 
 
 
