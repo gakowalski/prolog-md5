@@ -1,6 +1,6 @@
 :- use_module(library(clpfd)).
 :- use_module('conditionals.pl', [
-		  if_lesser/3,
+		  if_greater_equal/3,
 		  if_equal/3,
 		  if_even/2,
 		  if_odd/2,
@@ -25,6 +25,9 @@ dword_not(A, NotA) :-
 % dword_xor/3
 % True if X is equal to A xor B and A, B and C are 32-bit unsigned
 % integers.
+dword_xor(A, B, X) :-
+	dword_xor_2bit(A, B, X).
+
 dword_xor_2bit(A, B, X) :-
 	Limit is (2^32)-1,
 	[A, B, X] ins 0..Limit,
@@ -40,7 +43,7 @@ dword_xor_2bit(A, B, X) :-
 	scalar_product(T, XParts, #=, X),
 	maplist(xor_variant_2bit_0, AParts, BParts, XParts).
 
-dword_xor(A, B, X) :-
+dword_xor_3bit(A, B, X) :-
 	Limit is (2^32)-1,
 	[A, B, X] ins 0..Limit,
 	length(AParts, 11),
@@ -62,7 +65,8 @@ test_dword_xor :-
 test_dword_xor_2bit :-
 	dword_xor_2bit(0x12345678,0x31415926,0x23750F5E).
 
-% benchmark #2: 0.9, 34 | *, 11, 11 |
+% inferences: 5M, 156M |
+% secodns: 0.8, 27 |
 xor_variant_3bit_0(A, B, Xor) :-
 	Max #= max(A, B),
 	Min #= min(A, B),
@@ -86,18 +90,13 @@ if_between_bits(X, B, Result) :-
 	H #= 2^(B+1),
 	if_between(X, L, H, Result).
 
-
 xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
 xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
 xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
 
-% XOR variants benchmark:
-% variant_0 - 6 sec
-% variant_1 - 6.7 sec
-% variant_5 - 8 sec
-
 % THE BEST NOW
-% benchmark #2: 1.1, 6.3 | 5.4, 3.2, 3.6 |
+% inferences: 6M, 30M | 32M 19M 21M | 15K 22K 45K
+% seconds: 0.9, 5.3, | 4.6, 2.8, 3.1
 xor_variant_2bit_0(A, B, Xor) :-
 	Xor #= ((A + B*((-1)^A)) mod 4).
 
@@ -227,8 +226,8 @@ md5_final(States, Buffer, BitCount, Digest) :-
 md5_final_padlen(Index, PadLen) :-
 	Index in 0..63,
 	PadLen in 1..64,
-	if_lesser(Index, 56, Lesser),
-	PadLen #= Lesser*(56-Index) + (1-Lesser)*(120-Index).
+	if_greater_equal(Index, 56, Is_Greater_Equal),
+	PadLen #= (56 + 64*Is_Greater_Equal)-Index.
 dword_align(Input, Output, Length) :-
 	% dodac domeny dla wszystkich argumentow
 	PaddingLen in 0..24,
