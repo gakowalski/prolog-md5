@@ -27,7 +27,43 @@ dword_not(A, NotA) :-
 % True if X is equal to A xor B and A, B and C are 32-bit unsigned
 % integers.
 dword_xor(A, B, X) :-
-	dword_xor_3bit(A, B, X).
+	dword_xor_2bit(A, B, X).
+
+dword_xor_1bit(A, B, X) :-
+	Limit is (2^32)-1,
+	[A, B, X] ins 0..Limit,
+	length(AParts, 32),
+	length(BParts, 32),
+	length(XParts, 32),
+	AParts ins 0..1,
+	BParts ins 0..1,
+	XParts ins 0..1,
+	T = [1, 2, 4, 8, 16, 32, 64, 128,
+	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
+	     16777216, 33554432, 67108864, 134217728,
+	     268435456, 536870912, 1073741824, 2147483648],
+	scalar_product(T, AParts, #=, A),
+	scalar_product(T, BParts, #=, B),
+	scalar_product(T, XParts, #=, X),
+	maplist(xor_variant_1bit_3, AParts, BParts, XParts).
+
+% inferences: 4.7M, 95M | 120M 35M 37M | 16K 64K 73K
+% seconds: 0.9s 19s | 18s 5s 5.4s
+xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
+
+% inferences: 4.7M, 95M | 120M 35M 37M | 16K 64K 73K
+% seconds: 0.78s 18.9s | 18s 4.9s 5.3s
+xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
+
+% seconds: 0.79s, 18.7s | 18s, 5s 5.4s
+xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
+
+% seconds: 0.77s, 18.4s | 17.9s, 4.88s, 5.2s
+xor_variant_1bit_3(A, B, Xor) :-
+	A, B, Xor ins 0..1,
+	Sum #= A+B,
+	Xor #= Sum*(2-Sum).
 
 dword_xor_2bit(A, B, X) :-
 	Limit is (2^32)-1,
@@ -105,10 +141,6 @@ if_between_bits(X, B, Result) :-
 	L #= (2^B)-1,
 	H #= 2^(B+1),
 	if_between(X, L, H, Result).
-
-xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
-xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
-xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
 
 % THE BEST NOW
 % inferences: 6M, 30M | 32M 19M 21M | 15K 22K 45K
