@@ -29,6 +29,45 @@ dword_not(A, NotA) :-
 dword_xor(A, B, X) :-
 	dword_xor_2bit(A, B, X).
 
+dword_xor_3var_1bit(A, B, C, X) :-
+	Limit is (2^32)-1,
+	[A, B, C, X] ins 0..Limit,
+	length(AParts, 32),
+	length(BParts, 32),
+	length(CParts, 32),
+	length(XParts, 32),
+	AParts ins 0..1,
+	BParts ins 0..1,
+	CParts ins 0..1,
+	XParts ins 0..1,
+	T = [1, 2, 4, 8, 16, 32, 64, 128,
+	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
+	     16777216, 33554432, 67108864, 134217728,
+	     268435456, 536870912, 1073741824, 2147483648],
+	scalar_product(T, AParts, #=, A),
+	scalar_product(T, BParts, #=, B),
+	scalar_product(T, CParts, #=, C),
+	scalar_product(T, XParts, #=, X),
+	maplist(xor_3var_1bit_2, AParts, BParts, CParts, XParts).
+
+xor_3var_1bit_0(A, B, C, Xor) :-
+	[A, B, C, Xor] ins 0..1,
+	Sum0 #= A+B,
+	Sum1 #= Sum0*(2-Sum0) + C,
+	Xor #= Sum1*(2-Sum1).
+
+xor_3var_1bit_1(A, B, C, Xor) :-
+	[A, B, C, Xor] ins 0..1,
+	Xor #= (-A^2-2*A*B+2*A-B^2+2*B+C)*(A^2+2*A*B-2*A+B^2-2*B-C+2).
+
+xor_3var_1bit_2(A, B, C, Xor) :-
+	[A, B, C, Xor] ins 0..1,
+	%Xor #= (-2*A*B+A+B+C)*(2*A*B-A-B-C+2).
+	Sum #= A+B+C,
+	Mul #= 2*A*B,
+	Xor #= (Sum-Mul)*(Mul-Sum+2).
+
 dword_xor_1bit(A, B, X) :-
 	Limit is (2^32)-1,
 	[A, B, X] ins 0..Limit,
@@ -61,9 +100,15 @@ xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
 
 % seconds: 0.77s, 18.4s | 17.9s, 4.88s, 5.2s
 xor_variant_1bit_3(A, B, Xor) :-
-	A, B, Xor ins 0..1,
+	[A, B, Xor] ins 0..1,
 	Sum #= A+B,
 	Xor #= Sum*(2-Sum).
+
+xor_variant_1bit_4(A, B, Xor) :-
+	Xor #= A+B-2*A*B.
+
+xor_variant_1bit_5(A, B, Xor) :-
+	Xor #= (A-B)^2.
 
 dword_xor_2bit(A, B, X) :-
 	Limit is (2^32)-1,
@@ -83,18 +128,19 @@ dword_xor_2bit(A, B, X) :-
 dword_xor_3bit(A, B, X) :-
 	Limit is (2^32)-1,
 	[A, B, X] ins 0..Limit,
-	length(AParts, 11),
-	length(BParts, 11),
-	length(XParts, 11),
+	length(AParts, 10),
+	length(BParts, 10),
+	length(XParts, 10),
 	AParts ins 0..7,
 	BParts ins 0..7,
 	XParts ins 0..7,
-	%T = [2^0, 2^3, 2^6, 2^9, 2^12, 2^15, 2^18, 2^21, 2^24, 2^27, 2^30],
-	T = [1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728, 1073741824],
-	scalar_product(T, AParts, #=, A),
-	scalar_product(T, BParts, #=, B),
-	scalar_product(T, XParts, #=, X),
-	maplist(ultimate_xor, AParts, BParts, XParts).
+	[ALast, BLast, XLast] ins 0..3,
+	T = [1073741824, 1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728],
+	scalar_product(T, [ALast | AParts], #=, A),
+	scalar_product(T, [BLast | BParts], #=, B),
+	scalar_product(T, [XLast | XParts], #=, X),
+	maplist(ultimate_xor, AParts, BParts, XParts),
+	xor_variant_2bit_0(ALast, BLast, XLast).
 
 test_dword_xor :-
 	dword_xor(0x12345678,0x31415926,0x23750F5E).
@@ -128,9 +174,9 @@ xor_variant_3bit_1(A, B, Xor) :-
 	2*And #= Min + Reversed_B - Xor_2bit,
 	Xor #= abs(A-B) + 2*And.
 
-% inferences: 6M, 113M | 140M, 40M, 32M | 19K, 76K, 88K
-% seconds: 0.84s, 19s | 18s, 5s, 5.5s,
-xor_Variant_3bit_2(A, B, Xor) :-
+% inferences: 5.7M, 105M | 140M, 40M, 42M | 19K, 76K, 88K
+% seconds: 0.799s, 19s | 19.45s, 5.2s, 5.6s,
+xor_variant_3bit_2(A, B, Xor) :-
 	xor_variant_2bit_0(A, B, Xor_Base),
 	if_greater_equal(A, 4, A2),
 	if_greater_equal(B, 4, B2),
@@ -284,6 +330,8 @@ dword_align(Input, Output, Length) :-
 	maplist(=(0), Padding),
 	append(Input, Padding, Output).
 
+new_md5_transform(h, X, Y, Z, Result) :-
+	dword_xor_3var_1bit(X, Y, Z, Result).
 
 % #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
 % #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
