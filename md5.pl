@@ -49,7 +49,7 @@ dword_xor_3var_1bit(A, B, C, X) :-
 	scalar_product(T, BParts, #=, B),
 	scalar_product(T, CParts, #=, C),
 	scalar_product(T, XParts, #=, X),
-	maplist(xor_3var_1bit_2, AParts, BParts, CParts, XParts).
+	maplist(xor_3var_1bit_4, AParts, BParts, CParts, XParts).
 
 xor_3var_1bit_0(A, B, C, Xor) :-
 	[A, B, C, Xor] ins 0..1,
@@ -67,6 +67,72 @@ xor_3var_1bit_2(A, B, C, Xor) :-
 	Sum #= A+B+C,
 	Mul #= 2*A*B,
 	Xor #= (Sum-Mul)*(Mul-Sum+2).
+
+xor_3var_1bit_3(A, B, C, Xor) :-
+	[A, B, C, Xor] ins 0..1,
+	Xor #= (A-B-C)^2-4*B*C*(1-A).
+
+% the best now?
+xor_3var_1bit_4(A, B, C, Xor) :-
+	[A, B, C, Xor] ins 0..1,
+	Xor #= (A-B)^2*(1-2*C)+C.
+
+transform_f_1bit(A, B, C, X) :-
+	Limit is (2^32)-1,
+	[A, B, C, X] ins 0..Limit,
+	length(AParts, 32),
+	length(BParts, 32),
+	length(CParts, 32),
+	length(XParts, 32),
+	AParts ins 0..1,
+	BParts ins 0..1,
+	CParts ins 0..1,
+	XParts ins 0..1,
+	T = [1, 2, 4, 8, 16, 32, 64, 128,
+	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
+	     16777216, 33554432, 67108864, 134217728,
+	     268435456, 536870912, 1073741824, 2147483648],
+	scalar_product(T, AParts, #=, A),
+	scalar_product(T, BParts, #=, B),
+	scalar_product(T, CParts, #=, C),
+	scalar_product(T, XParts, #=, X),
+	maplist(f_1bit_0, AParts, BParts, CParts, XParts).
+
+f_1bit_0(A, B, C, Result) :-
+	[A, B, C, Result] ins 0..1,
+	Result #= max(min(A,B),min(1-A,C)).
+
+f_1bit_1(A, B, C, Result) :-
+	[A, B, C, Result] ins 0..1,
+	Result #= max(A*B,(1-A)*C).
+
+transform_i_1bit(A, B, C, X) :-
+	Limit is (2^32)-1,
+	[A, B, C, X] ins 0..Limit,
+	length(AParts, 32),
+	length(BParts, 32),
+	length(CParts, 32),
+	length(XParts, 32),
+	AParts ins 0..1,
+	BParts ins 0..1,
+	CParts ins 0..1,
+	XParts ins 0..1,
+	T = [1, 2, 4, 8, 16, 32, 64, 128,
+	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
+	     16777216, 33554432, 67108864, 134217728,
+	     268435456, 536870912, 1073741824, 2147483648],
+	scalar_product(T, AParts, #=, A),
+	scalar_product(T, BParts, #=, B),
+	scalar_product(T, CParts, #=, C),
+	scalar_product(T, XParts, #=, X),
+	maplist(i_1bit_0, AParts, BParts, CParts, XParts).
+
+i_1bit_0(A, B, C, Result) :-
+	[A, B, C, Result] ins 0..1,
+	T #= max(A, 1-C),
+	xor_variant_1bit_5(T, B, Result).
 
 dword_xor_1bit(A, B, X) :-
 	Limit is (2^32)-1,
@@ -125,144 +191,25 @@ dword_xor_2bit(A, B, X) :-
 	scalar_product(T, XParts, #=, X),
 	maplist(xor_variant_2bit_0, AParts, BParts, XParts).
 
-dword_xor_3bit(A, B, X) :-
-	Limit is (2^32)-1,
-	[A, B, X] ins 0..Limit,
-	length(AParts, 10),
-	length(BParts, 10),
-	length(XParts, 10),
-	AParts ins 0..7,
-	BParts ins 0..7,
-	XParts ins 0..7,
-	[ALast, BLast, XLast] ins 0..3,
-	T = [1073741824, 1, 8, 64, 512, 4096, 32768, 262144, 2097152, 16777216, 134217728],
-	scalar_product(T, [ALast | AParts], #=, A),
-	scalar_product(T, [BLast | BParts], #=, B),
-	scalar_product(T, [XLast | XParts], #=, X),
-	maplist(ultimate_xor, AParts, BParts, XParts),
-	xor_variant_2bit_0(ALast, BLast, XLast).
-
 test_dword_xor :-
 	dword_xor(0x12345678,0x31415926,0x23750F5E).
 
 test_dword_xor_2bit :-
 	dword_xor_2bit(0x12345678,0x31415926,0x23750F5E).
 
-ultimate_xor(A, B, Xor) :-
-	xor_variant_2bit_0(A, B, Xor_Base),
-	if_greater_equal(A, 4, A2),
-	if_greater_equal(B, 4, B2),
-	Xor #= Xor_Base + abs(A2*4 - B2*4).
-
-% inferences: 5M, 156M |
-% secodns: 0.8, 27 |
-xor_variant_3bit_0(A, B, Xor) :-
-	Max #= max(A, B),
-	Min #= min(A, B),
-	if_even(Max, Is_Max_Even),
-	if_odd(Min, Is_Min_Even),
-	if_between(Max, 3, 6, Is_Max_Between),
-	if_between(Min, 1, 4, Is_Min_Between),
-	Xor #= abs(A-B) + Is_Max_Even*Is_Min_Even*2 + Is_Max_Between*Is_Min_Between*4.
-
-% not finished
-xor_variant_3bit_1(A, B, Xor) :-
-	Max #= max(A, B),
-	Min #= min(A, B),
-	Reversed_B #= (7-Max) mod 4,
-	xor_variant_2bit_0(Min, Reversed_B, Xor_2bit),
-	2*And #= Min + Reversed_B - Xor_2bit,
-	Xor #= abs(A-B) + 2*And.
-
-% inferences: 5.7M, 105M | 140M, 40M, 42M | 19K, 76K, 88K
-% seconds: 0.799s, 19s | 19.45s, 5.2s, 5.6s,
-xor_variant_3bit_2(A, B, Xor) :-
-	xor_variant_2bit_0(A, B, Xor_Base),
-	if_greater_equal(A, 4, A2),
-	if_greater_equal(B, 4, B2),
-	Xor #= Xor_Base + abs(A2*4 - B2*4).
-
-
-if_between_bits(X, B, Result) :-
-	L #= (2^B)-1,
-	H #= 2^(B+1),
-	if_between(X, L, H, Result).
-
-% THE BEST NOW
-% inferences: 6M, 30M | 32M 19M 21M | 15K 22K 45K
-% seconds: 0.9, 5.3, | 4.6, 2.8, 3.1
 xor_variant_2bit_0(A, B, Xor) :-
 	Xor #= ((A + B*((-1)^A)) mod 4).
-
-xor_variant_2bit_1(A, B, Xor) :-
-	Xor #= ((1 + (A mod 2)*2)*B - 3*A) mod 4.
-
-xor_variant_2bit_2(A, B, Xor) :-
-	3*Xor #= 3*A + 3*B - 83*A*B + 81*A*(B^2) - 18*A*(B^3) + 81*(A^2)*B - 81*(A^2)*(B^2) + 18*(A^2)*(B^3) - 18*(A^3)*B + 18*(A^3)*(B^2) - 4*(A^3)*(B^3).
-
-xor_variant_2bit_3(A, B, Xor) :-
-	6*Xor #= (1-A)*(2-A)*(3-A)*(A+B) - 3*A*(1-A)*(3-A)*(A+B) + A*(1-A)*(2-A)*(A-B) + 3*A*(2-A)*(3-A)*(A-B) - 3*B*(1-B)*(3-B)*A*(3-A)*(6-4*A) + B*(1-B)*(2-B)*A*(3-A)*(6-4*A).
-
-xor_variant_2bit_4(A, B, Xor) :-
-	2*Xor #= abs(A-B) * (2+A*A*B*B - 3*A*B*B - 3*A*A*B + 9*A*B).
-
-% benchmark #2: 1.3, 11.7 | 5, 4.5, 4.7 | 0, 0, 0
-xor_variant_2bit_5(A, B, Xor) :-
-	Xor #= abs(A-B) + 2*0^(2-A*B).
-
-% benchmark #2: 1.3, 15.5 | 119, 11, 11 | 0, 0, 0
-xor_variant_2bit_6(A, B, Xor) :-
-	M #= A*B,
-	2*Xor #= abs(A-B) * (M*(M-3*(A+B)+9)+2).
-
-% benchmark #2: 1.1, 15.2 | 8.4, 7.3, 7.3 | 0, 0, 0
-xor_variant_2bit_7(A, B, Xor) :-
-	T #= A*B,
-	if_equal(T, 2, Is_Equal),
-	Xor #= abs(A-B) + 2*Is_Equal.
 
 test_benchmark(Test) :-
 	print(Test), time(Test).
 
-xor_benchmark :-
+md5_benchmark :-
 	Battery = [
 	    test_md5,
-	    test_md5_reverse,
-	    test_xor_1,
-	    test_xor_2,
-	    test_xor_3,
-	    test_xor_4,
-	    test_xor_5,
-	    test_xor_6
+	    test_md5_reverse
 	],
 	maplist(test_benchmark, Battery),
 	!.
-
-test_xor_1 :-
-	[A,B] ins 0..0x2FFF,
-	dword_xor(A, B, 5),
-	findall(_, labeling([bisect], [A, B]), _).
-test_xor_2 :-
-	[A,B] ins 0..0x2FFF,
-	dword_xor(A, 5, B),
-	findall(_, labeling([bisect], [A, B]), _).
-test_xor_3 :-
-	[A,B] ins 0..0x2FFF,
-	dword_xor(5, A, B),
-	findall(_, labeling([bisect], [A, B]), _).
-test_xor_4 :-
-	X in 0..0xFFFF,
-	dword_xor(0xFFF, 5, X),
-	findall(_, labeling([bisect], [X]), _).
-test_xor_5 :-
-	X in 0..0x2FFF,
-	dword_xor(0xFFF, X, 5),
-	findall(_, labeling([bisect], [X]), _).
-test_xor_6 :-
-	X in 0..0x2FFF,
-	dword_xor(X, 0xFFF, 5),
-	findall(_, labeling([bisect], [X]), _).
-
 
 %%
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
@@ -330,9 +277,6 @@ dword_align(Input, Output, Length) :-
 	maplist(=(0), Padding),
 	append(Input, Padding, Output).
 
-new_md5_transform(h, X, Y, Z, Result) :-
-	dword_xor_3var_1bit(X, Y, Z, Result).
-
 % #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
 % #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
 % #define H(x, y, z) ((x) ^ (y) ^ (z))
@@ -340,22 +284,22 @@ new_md5_transform(h, X, Y, Z, Result) :-
 
 % md5_transform(type, x, y, z, result).
 md5_transform(f, X, Y, Z, Result) :-
-	dword_and(X, Y, XandY),
-	dword_not(X, NotX),
-	dword_and(NotX, Z, NXandZ),
-	dword_or(XandY, NXandZ, Result).
+	transform_f_1bit(X, Y, Z, Result).
 md5_transform(g, X, Y, Z, Result) :-
-	md5_transform(f, Z, X, Y, Result).
+	transform_f_1bit(Z, X, Y, Result).
 md5_transform(h, X, Y, Z, Result) :-
-	dword_xor(X, Y, XxorY),
-	dword_xor(XxorY, Z, Result).
+	dword_xor_3var_1bit(X, Y, Z, Result).
 md5_transform(i, X, Y, Z, Result) :-
-	dword_not(Z, NotZ),
-	dword_or(NotZ, X, NZorX),
-	dword_xor(NZorX, Y, Result).
+	transform_i_1bit(X, Y, Z, Result).
+% Trans is transformation letter
+% A, B, C, D are states
+% X is part of the message
+% S is rotation constant
+% AC is round constatnt
 md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	S in 0..31,
-	[A,B,C,D,Result,X,AC,Rotated] ins 0..4294967295,
+	[A,B,C,D,Result,X,Rotated] ins 0..4294967295,
+	AC in 38016083..4294925233,
 	md5_transform(Trans, B, C, D, F),
 	Sum #= (A + F + X + AC) mod 4294967296,
 	S2 #= 32 - S,
