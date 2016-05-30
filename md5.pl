@@ -298,13 +298,18 @@ md5_transform(i, X, Y, Z, Result) :-
 % AC is round constatnt
 md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	S in 0..31,
-	[A,B,C,D,Result,X,Rotated] ins 0..4294967295,
+	[X,Rotated] ins 0..4294967295,
 	AC in 38016083..4294925233,
-	md5_transform(Trans, B, C, D, F),
-	Sum #= (A + F + X + AC) mod 4294967296,
+	NA #= A mod 0xFFFFffff,
+	NB #= B mod 0xFFFFffff,
+	NC #= C mod 0xFFFFffff,
+	ND #= D mod 0xFFFFffff,
+	md5_transform(Trans, NB, NC, ND, F),
+	Sum #= NA + F + X + AC,
 	S2 #= 32 - S,
-	Rotated #= (Sum * 2^S) mod 4294967296 + (Sum // 2^S2), % rotate left S times
-	Result #= (Rotated + B) mod 4294967296.
+	Rotated #= (Sum * 2^S) mod 4294967296 + ((Sum mod 0xFFFFffff) // 2^S2), % rotate left S times
+	%Result #= (Rotated + NB) mod 4294967296.
+	Result #= Rotated + NB.
 md5_bytes_to_dwords([], []).
 md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
 	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
@@ -329,7 +334,11 @@ md5_transform_states(States, Bytes, NewStates) :-
 	O4 #= (S4 + T4) mod 4294967296,
 	md5_transform_states(1, States, Dwords, Result).
 
-md5_transform_states(65, States, _, States).
+md5_transform_states(65, [A, B, C, D], _, [NA, NB, NC, ND]) :-
+	NA #= A mod 0xFFFFffff,
+	NB #= B mod 0xFFFFffff,
+	NC #= C mod 0xFFFFffff,
+	ND #= D mod 0xFFFFffff.
 md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, RotValue),
