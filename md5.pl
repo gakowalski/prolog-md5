@@ -4,34 +4,6 @@
 		  if_greater_equal/3
 	      ]).
 
-% dword_xor/3
-% True if X is equal to A xor B and A, B and C are 32-bit unsigned
-% integers.
-dword_xor(A, B, X) :-
-	dword_xor_2bit(A, B, X).
-
-dword_xor_3var_1bit(A, B, C, X) :-
-	Limit is (2^32)-1,
-	[A, B, C, X] ins 0..Limit,
-	length(AParts, 32),
-	length(BParts, 32),
-	length(CParts, 32),
-	length(XParts, 32),
-	AParts ins 0..1,
-	BParts ins 0..1,
-	CParts ins 0..1,
-	XParts ins 0..1,
-	T = [1, 2, 4, 8, 16, 32, 64, 128,
-	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
-	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
-	     16777216, 33554432, 67108864, 134217728,
-	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, AParts, #=, A),
-	scalar_product(T, BParts, #=, B),
-	scalar_product(T, CParts, #=, C),
-	scalar_product(T, XParts, #=, X),
-	maplist(xor_3var_1bit_4, AParts, BParts, CParts, XParts).
-
 xor_3var_1bit_0(A, B, C, Xor) :-
 	[A, B, C, Xor] ins 0..1,
 	Sum0 #= A+B,
@@ -79,8 +51,28 @@ transform_1bit(Trans, A, B, C, X) :-
 	scalar_product(T, [_XLast | XParts], #=, X),
 	maplist(Trans, AParts, BParts, CParts, XParts).
 
+transform_2bit(Trans, A, B, C, X) :-
+	length(AParts, 16),
+	length(BParts, 16),
+	length(CParts, 16),
+	length(XParts, 16),
+	AParts ins 0..3,
+	BParts ins 0..3,
+	CParts ins 0..3,
+	XParts ins 0..3,
+	T = [ 0x100000000,
+	     1, 4, 16, 64,
+	     256, 1024, 4096, 16384,
+	     65536, 262144, 1048576, 4194304,
+	     16777216, 67108864, 268435456, 1073741824],
+	scalar_product(T, [_ALast | AParts], #=, A),
+	scalar_product(T, [_BLast | BParts], #=, B),
+	scalar_product(T, [_CLast | CParts], #=, C),
+	scalar_product(T, [_XLast | XParts], #=, X),
+	maplist(Trans, AParts, BParts, CParts, XParts).
+
 transform_f_1bit(A, B, C, X) :-
-	transform_1bit(f_1bit_0, A, B, C, X).
+	transform_1bit(f_1bit_1, A, B, C, X).
 
 f_1bit_0(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
@@ -89,6 +81,12 @@ f_1bit_0(A, B, C, Result) :-
 f_1bit_1(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
 	Result #= max(A*B,(1-A)*C).
+
+f_1bit_2(A, B, C, Result) :-
+	X #= A*B,
+	Y #= (1-A)*C,
+	if_greater_equal(X, Y, Is_Greater),
+	Result #= Is_Greater*X + (1-Is_Greater)*Y.
 
 transform_i_1bit(A, B, C, X) :-
 	transform_1bit(i_1bit_0, A, B, C, X).
@@ -101,45 +99,15 @@ i_1bit_0(A, B, C, Result) :-
 transform_h_1bit(A, B, C, X) :-
 	transform_1bit(xor_3var_1bit_0, A, B, C, X).
 
-dword_xor_1bit(A, B, X) :-
-	Limit is (2^32)-1,
-	[A, B, X] ins 0..Limit,
-	length(AParts, 32),
-	length(BParts, 32),
-	length(XParts, 32),
-	AParts ins 0..1,
-	BParts ins 0..1,
-	XParts ins 0..1,
-	T = [1, 2, 4, 8, 16, 32, 64, 128,
-	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
-	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
-	     16777216, 33554432, 67108864, 134217728,
-	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, AParts, #=, A),
-	scalar_product(T, BParts, #=, B),
-	scalar_product(T, XParts, #=, X),
-	maplist(xor_variant_1bit_3, AParts, BParts, XParts).
-
-% inferences: 4.7M, 95M | 120M 35M 37M | 16K 64K 73K
-% seconds: 0.9s 19s | 18s 5s 5.4s
 xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
-
-% inferences: 4.7M, 95M | 120M 35M 37M | 16K 64K 73K
-% seconds: 0.78s 18.9s | 18s 4.9s 5.3s
 xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
-
-% seconds: 0.79s, 18.7s | 18s, 5s 5.4s
 xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
-
-% seconds: 0.77s, 18.4s | 17.9s, 4.88s, 5.2s
 xor_variant_1bit_3(A, B, Xor) :-
 	[A, B, Xor] ins 0..1,
 	Sum #= A+B,
 	Xor #= Sum*(2-Sum).
-
 xor_variant_1bit_4(A, B, Xor) :-
 	Xor #= A+B-2*A*B.
-
 xor_variant_1bit_5(A, B, Xor) :-
 	Xor #= (A-B)^2.
 
@@ -157,12 +125,6 @@ dword_xor_2bit(A, B, X) :-
 	scalar_product(T, BParts, #=, B),
 	scalar_product(T, XParts, #=, X),
 	maplist(xor_variant_2bit_0, AParts, BParts, XParts).
-
-test_dword_xor :-
-	dword_xor(0x12345678,0x31415926,0x23750F5E).
-
-test_dword_xor_2bit :-
-	dword_xor_2bit(0x12345678,0x31415926,0x23750F5E).
 
 xor_variant_2bit_0(A, B, Xor) :-
 	Xor #= ((A + B*((-1)^A)) mod 4).
@@ -204,6 +166,8 @@ md5(MsgStr, Digest) :-
 	% constants
 	States = [ 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 ],
 	domain(buffer, Buffer),
+	domain(buffer, NewBuffer),
+	domain(states, NewStates),
 	maplist(=(0), Buffer),
 
 	% domain declarations
@@ -247,8 +211,8 @@ md5_final(States, Buffer, Length, Digest) :-
 	maplist(=(0), Padding),
 
 	% equations
-	HighBitCount #= (Length * 8) // 256,
-	LowBitCount #= (Length * 8) mod 256,
+	HighBitCount #= Length // 16,
+	LowBitCount #= (Length mod 16) * 8,
 
 	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
 	Index #= Length mod 64,
@@ -262,7 +226,7 @@ md5_final(States, Buffer, Length, Digest) :-
 
 md5_transform(f, X, Y, Z, Result) :- transform_f_1bit(X, Y, Z, Result).
 md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
-md5_transform(h, X, Y, Z, Result) :- transform_h_1bit(X, Y, Z, Result).
+md5_transform(h, X, Y, Z, Result) :- transform_h_1bit(Z, X, Y, Result).
 md5_transform(i, X, Y, Z, Result) :- transform_i_1bit(X, Y, Z, Result).
 
 md5_bytes_to_dwords([], []).
@@ -307,22 +271,12 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, New_States) :-
 	Next_Round is Round + 1,
 	md5_transform_states(Next_Round, [ D, Result, B, C ], Dwords, New_States).
 
-% md5_update(
-%    States, NewStates,
-%    Buffer, NewBuffer,
-%    Input, InputLen,
-%    InCount0, OutCount0,
-%    InCount1, OutCount1).
-%
 % Prawdziwa relacja!
 
 md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, Byte_Count) :-
 	maplist(domain(states), [States, NewStates]),
 	maplist(domain(buffer), [Buffer, NewBuffer]),
-	% TO DO: domena dla Input
 	InputLen in 0..64,
-	%Byte_Count in 0..64,
-
 	Index in 0..63,
 	PartLen in 1..64,
 
@@ -330,7 +284,6 @@ md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, Byte_Count) :-
 	PartLen #= 64 - Index,
 
 	zcompare(Order, InputLen, PartLen),
-	%NewBitCount #= BitCount + InputLen * 8,
 	md5_update0(Order, Index, States, NewStates, Buffer, NewBuffer, Input, InputLen).
 
 md5_update0(<, Index, States, States, Buffer, NewBuffer, Input, InputLen) :-
@@ -352,6 +305,7 @@ byte_copy(Buffer, Start, Data, DataLen, NewBuffer) :-
 	Start in 0..63,
 	[DataLen, TrueDataLen] ins 0..64,
 	TrueDataLen #>= DataLen,
+	%TrueDataLen = DataLen + Some_Value,
 	var_length(Data, TrueDataLen),
 	byte_copy(Buffer, Start, Data, DataLen, NewBuffer, 0).
 byte_copy([], _, _, _, [], _).
@@ -364,6 +318,7 @@ byte_copy([ B | Buffer ], Start, Data, DataLen, [ NB | NewBuffer ], Counter) :-
 	NB #= (1-L1)*(L2)*D + (1-(1-L1)*(L2))*B,
 	NewCounter is Counter + 1,
 	byte_copy(Buffer, Start, Data, DataLen, NewBuffer, NewCounter).
+
 demo_md5 :-
 	print('Type text to be hashed: '),
 	current_input(Stream),
