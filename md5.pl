@@ -63,8 +63,6 @@ xor_3var_1bit_4(A, B, C, Xor) :-
 	Xor #= (A-B)^2*(1-2*C)+C.
 
 transform_1bit(Trans, A, B, C, X) :-
-	%Limit is (2^32)-1,
-	%[A, B, C, X] ins 0..Limit,
 	length(AParts, 32),
 	length(BParts, 32),
 	length(CParts, 32),
@@ -188,61 +186,82 @@ md5_benchmark :-
 % uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
 %%
+domain(byte, Byte) :-
+	Byte in 0..255.
+domain(dword, Dword) :-
+	Dword in 0..0xFFFFffff.
 domain(buffer, Buffer) :-
 	length(Buffer, 64),
 	Buffer ins 0..255.
-domain(states, [S0, S1, S2, S3]) :-
+domain(states, [A, B, C, D]) :-
+	A #>= 0,
+	B #>= 0,
+	C #>= 0,
+	D #>= 0.
+domain(digest, [S0, S1, S2, S3]) :-
 	[S0, S1, S2, S3] ins 0..0xFFFFFFFF.
+
 var_length(List, Length) :- var(List), label([Length]), length(List, Length).
 var_length(List, Length) :- nonvar(List), length(List, Length).
 
-% glowna funkcja md5
-% parametry:
-% MsgStr - lista kodow znakowych, np. "Test"
-% Digest - Wynik
 md5(MsgStr, Digest) :-
-	% domain declarations
-	domain(states, Digest),
-	Length in 0..56,
-	var_length(MsgStr, Length),
-	MsgStr ins 20..125,
-
-	% creating some constants
+	% constants
 	States = [ 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 ],
 	domain(buffer, Buffer),
 	maplist(=(0), Buffer),
 
-	% add padding zeros
-	dword_align(MsgStr, Aligned, Length),
+	% domain declarations
+	domain(digest, Digest),
+	Length in 0..56,
+	PaddingLen in 0..24,
+
+	% variable length lists
+	var_length(MsgStr, Length),
+	MsgStr ins 20..125,
+
+	% message padding
+	PaddingLen #= ((4 - Length mod 4) mod 4),
+	var_length(Padding, PaddingLen),
+	maplist(=(0), Padding),
+	append(MsgStr, Padding, Aligned),
 
 	% process message
 	md5_update(States, NewStates, Buffer, NewBuffer, Aligned, Length, 0, BitCount), % true rel
-	md5_final(NewStates, NewBuffer, BitCount, Digest). % true rel
+	md5_final(NewStates, NewBuffer, BitCount, [D1, D2, D3, D4]),
+
+	% truncate output to dword values
+	O1 #= D1 mod 0x100000000,
+	O2 #= D2 mod 0x100000000,
+	O3 #= D3 mod 0x100000000,
+	O4 #= D4 mod 0x100000000,
+
+	% final hash values
+	Digest = [O1, O2, O3, O4]. % true rel
 
 md5_final(States, Buffer, BitCount, Digest) :-
+	% domain declarations
 	maplist(domain(states), [States, Digest]),
 	domain(buffer, Buffer),
 	BitCount in 0..65535,
-	%label([BitCount]),
+	PadLen in 1..64,
+	Index in 0..63,
 	[HighBitCount, LowBitCount] ins 0..255,
-	HighBitCount #= BitCount // 256,
-	LowBitCount #= BitCount mod 256,
-	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
+
+	% some constants
 	length(Padding, 63), % one byte to be added later
 	maplist(=(0), Padding),
-	Index in 0..63,
+
+	% equations
+	HighBitCount #= BitCount // 256,
+	LowBitCount #= BitCount mod 256,
+
+	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
 	Index #= (BitCount // 8) mod 64,
-	md5_final_padlen(Index, PadLen), % PadLen in 1..64
+	if_greater_equal(Index, 56, Is_Greater_Equal),
+	PadLen #= (56 + 64*Is_Greater_Equal)-Index,
+
 	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, BitCount, NewBC), % true rel
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
-
-% (index < 56) ? (56 - index) : (120 - index);
-% true relation
-md5_final_padlen(Index, PadLen) :-
-	Index in 0..63,
-	PadLen in 1..64,
-	if_greater_equal(Index, 56, Is_Greater_Equal),
-	PadLen #= (56 + 64*Is_Greater_Equal)-Index.
 
 dword_align(Input, Output, Length) :-
 	% dodac domeny dla wszystkich argumentow
@@ -259,6 +278,8 @@ md5_transform(i, X, Y, Z, Result) :- transform_i_1bit(X, Y, Z, Result).
 
 md5_bytes_to_dwords([], []).
 md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
+	maplist(domain(byte), [D0, D1, D2, D3]),
+	%domain(dword, Dword),
 	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
         %scalar_product([16777216,65536,256,1],[D0,D1,D2,D3],#=,Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
@@ -276,32 +297,32 @@ md5_transform_states(States, Bytes, NewStates) :-
 	States = [S1,S2,S3,S4],
 	Result = [T1,T2,T3,T4],
 	NewStates = [O1,O2,O3,O4],
-	O1 #= (S1 + T1) mod 4294967296,
-	O2 #= (S2 + T2) mod 4294967296,
-	O3 #= (S3 + T3) mod 4294967296,
-	O4 #= (S4 + T4) mod 4294967296,
+	O1 #= S1 + T1,
+	O2 #= S2 + T2,
+	O3 #= S3 + T3,
+	O4 #= S4 + T4,
 	md5_transform_states(1, States, Dwords, Result).
 
 md5_transform_states(65, States, _, States).
 
-md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
-	X in 0..0xFFFFffff,
-	A #>= 0,
-	B #>= 0,
-	C #>= 0,
-	D #>= 0,
+md5_transform_states(Round, [ A, B, C, D ], Dwords, New_States) :-
 	Result #> 0,
+	domain(dword, X),
+	domain(states, [A, B, C, D]),
+	domain(states, New_States),
 
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, S),
-	nth0(Index, Dwords, X),
+
+	New_Index is Index + 1,
+	element(New_Index, Dwords, X),
 
 	md5_transform(Trans, B, C, D, F),
 	Sum #= A + F + X + AC,
-	Result #= B + Sum * 2^S + ((Sum mod 0x100000000) // 2^(32-S)), % rotate left S times
+	Result #= B + Sum * 2^S + (Sum // 2^(32-S)) mod (2^S), % rotate left S times
 
-	NewRound is Round + 1,
-	md5_transform_states(NewRound, [ D, Result, B, C ], Dwords, NewStates).
+	Next_Round is Round + 1,
+	md5_transform_states(Next_Round, [ D, Result, B, C ], Dwords, New_States).
 
 test_md5_transform :-
 	L = [1732584193,4023233417,2562383102,271733878],
