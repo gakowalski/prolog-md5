@@ -222,8 +222,8 @@ md5(MsgStr, Digest) :-
 	append(MsgStr, Padding, Aligned),
 
 	% process message
-	md5_update(States, NewStates, Buffer, NewBuffer, Aligned, Length, 0, BitCount), % true rel
-	md5_final(NewStates, NewBuffer, BitCount, [D1, D2, D3, D4]),
+	md5_update(States, NewStates, Buffer, NewBuffer, Aligned, Length, 0), % true rel
+	md5_final(NewStates, NewBuffer, Length, [D1, D2, D3, D4]),
 
 	% truncate output to dword values
 	O1 #= D1 mod 0x100000000,
@@ -234,11 +234,10 @@ md5(MsgStr, Digest) :-
 	% final hash values
 	Digest = [O1, O2, O3, O4]. % true rel
 
-md5_final(States, Buffer, BitCount, Digest) :-
+md5_final(States, Buffer, Length, Digest) :-
 	% domain declarations
 	maplist(domain(states), [States, Digest]),
 	domain(buffer, Buffer),
-	BitCount in 0..65535,
 	PadLen in 1..64,
 	Index in 0..63,
 	[HighBitCount, LowBitCount] ins 0..255,
@@ -248,16 +247,18 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	maplist(=(0), Padding),
 
 	% equations
-	HighBitCount #= BitCount // 256,
-	LowBitCount #= BitCount mod 256,
+	HighBitCount #= (Length * 8) // 256,
+	LowBitCount #= (Length * 8) mod 256,
 
 	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
-	Index #= (BitCount // 8) mod 64,
+	Index #= Length mod 64,
 	if_greater_equal(Index, 56, Is_Greater_Equal),
 	PadLen #= (56 + 64*Is_Greater_Equal)-Index,
 
-	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, BitCount, NewBC), % true rel
-	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
+	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, Length), % true rel
+
+	New_Length #= Length + PadLen,
+	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, New_Length). %true rel
 
 md5_transform(f, X, Y, Z, Result) :- transform_f_1bit(X, Y, Z, Result).
 md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
@@ -315,34 +316,36 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, New_States) :-
 %
 % Prawdziwa relacja!
 
-md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, Byte_Count) :-
 	maplist(domain(states), [States, NewStates]),
 	maplist(domain(buffer), [Buffer, NewBuffer]),
 	% TO DO: domena dla Input
-	% InputLen in 0..64,
-	[BitCount, NewBitCount] ins 0..512, % 512 czy 511?
-	md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount).
-md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
+	InputLen in 0..64,
+	%Byte_Count in 0..64,
+
 	Index in 0..63,
 	PartLen in 1..64,
-	Index #= (BitCount // 8) mod 64,
+
+	Index #= Byte_Count mod 64,
 	PartLen #= 64 - Index,
-	InputLen #< PartLen,
-	NewBitCount #= BitCount + InputLen * 8,
+
+	zcompare(Order, InputLen, PartLen),
+	%NewBitCount #= BitCount + InputLen * 8,
+	md5_update0(Order, Index, States, NewStates, Buffer, NewBuffer, Input, InputLen).
+
+md5_update0(<, Index, States, States, Buffer, NewBuffer, Input, InputLen) :-
 	byte_copy(Buffer, Index, Input, InputLen, NewBuffer).
-md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
-	Index in 0..63,
-	PartLen in 1..64,
-	Index #= (BitCount // 8) mod 64,
-	PartLen #= 64 - Index,
-	InputLen #>= PartLen,
-	NewBitCount #= BitCount + InputLen * 8,
+
+md5_update0(=, Index, S, NS, B, NB, I, IL) :- md5_update0(>, Index, S, NS, B, NB, I, IL).
+
+md5_update0(>, Index, States, NewStates, Buffer, NewBuffer, Input, InputLen) :-
 	byte_copy(Buffer, Index, Input, PartLen, TmpBuffer), % true rel
 	md5_transform_states(States, TmpBuffer, NewStates), % true rel
 	var_length(Ignore, PartLen),
 	append(Ignore, NewInput, Input),
 	Len #= InputLen - PartLen,
 	byte_copy(TmpBuffer, 0, NewInput, Len, NewBuffer). % true rel
+
 byte_copy(Buffer, _, [], _, Buffer).
 byte_copy(Buffer, Start, Data, DataLen, NewBuffer) :-
 	maplist(domain(buffer), [Buffer, NewBuffer]),
