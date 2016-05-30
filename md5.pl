@@ -1,11 +1,7 @@
 :- use_module(library(clpfd)).
 :- use_module('conditionals.pl', [
 		  if_lesser/3,
-		  if_greater_equal/3,
-		  if_equal/3,
-		  if_even/2,
-		  if_odd/2,
-		  if_between/4
+		  if_greater_equal/3
 	      ]).
 
 % dword_xor/3
