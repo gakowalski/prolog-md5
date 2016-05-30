@@ -263,14 +263,6 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, BitCount, NewBC), % true rel
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
 
-dword_align(Input, Output, Length) :-
-	% dodac domeny dla wszystkich argumentow
-	PaddingLen in 0..24,
-	PaddingLen #= ((4 - Length mod 4) mod 4),
-	var_length(Padding, PaddingLen),
-	maplist(=(0), Padding),
-	append(Input, Padding, Output).
-
 md5_transform(f, X, Y, Z, Result) :- transform_f_1bit(X, Y, Z, Result).
 md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
 md5_transform(h, X, Y, Z, Result) :- transform_h_1bit(X, Y, Z, Result).
@@ -284,19 +276,13 @@ md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
         %scalar_product([16777216,65536,256,1],[D0,D1,D2,D3],#=,Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
 
-% md5_transform_states/3
-% prawdziwa relacja
-% TRUE RELATION!
-% States = stany inicjalne
-% Bytes = kodowany komunikat
-% NewStates = stany koncowe
-md5_transform_states(States, Bytes, NewStates) :-
-	maplist(domain(states), [States, NewStates]),
+md5_transform_states(States, Bytes, New_States) :-
+	maplist(domain(states), [States, New_States]),
 	domain(buffer, Bytes),
 	md5_bytes_to_dwords(Bytes, Dwords),
 	States = [S1,S2,S3,S4],
 	Result = [T1,T2,T3,T4],
-	NewStates = [O1,O2,O3,O4],
+	New_States = [O1,O2,O3,O4],
 	O1 #= S1 + T1,
 	O2 #= S2 + T2,
 	O3 #= S3 + T3,
@@ -324,35 +310,6 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, New_States) :-
 	Next_Round is Round + 1,
 	md5_transform_states(Next_Round, [ D, Result, B, C ], Dwords, New_States).
 
-test_md5_transform :-
-	L = [1732584193,4023233417,2562383102,271733878],
-	M = [ 84, 69, 83, 84, 128, 0, 0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      32,  0,  0,  0,  0,  0,  0,  0],
-	md5_transform_states(L, M, N),
-	labeling([bisect], N),
-	N = [1272527619,3839322129,3276068592,3207945929].
-
-test_md5_transform_reverse :-
-	N = [1272527619,3839322129,3276068592,3207945929],
-	md5_transform_states(L, M, N),
-	labeling([bisect], L),
-	L = [1732584193,4023233417,2562383102,271733878],
-	labeling([bisect], M),
-	M = [ 84, 69, 83, 84, 128, 0, 0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      0,  0,  0,  0,  0,  0,  0,  0,
-	      32,  0,  0,  0,  0,  0,  0,  0].
-
 % md5_update(
 %    States, NewStates,
 %    Buffer, NewBuffer,
@@ -366,6 +323,7 @@ md5_update(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewB
 	maplist(domain(states), [States, NewStates]),
 	maplist(domain(buffer), [Buffer, NewBuffer]),
 	% TO DO: domena dla Input
+	% InputLen in 0..64,
 	[BitCount, NewBitCount] ins 0..512, % 512 czy 511?
 	md5_update0(States, NewStates, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount).
 md5_update0(States, States, Buffer, NewBuffer, Input, InputLen, BitCount, NewBitCount) :-
