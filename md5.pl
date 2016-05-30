@@ -77,9 +77,9 @@ xor_3var_1bit_4(A, B, C, Xor) :-
 	[A, B, C, Xor] ins 0..1,
 	Xor #= (A-B)^2*(1-2*C)+C.
 
-transform_f_1bit(A, B, C, X) :-
-	Limit is (2^32)-1,
-	[A, B, C, X] ins 0..Limit,
+transform_1bit(Trans, A, B, C, X) :-
+	%Limit is (2^32)-1,
+	%[A, B, C, X] ins 0..Limit,
 	length(AParts, 32),
 	length(BParts, 32),
 	length(CParts, 32),
@@ -88,16 +88,20 @@ transform_f_1bit(A, B, C, X) :-
 	BParts ins 0..1,
 	CParts ins 0..1,
 	XParts ins 0..1,
-	T = [1, 2, 4, 8, 16, 32, 64, 128,
+	T = [ 0x100000000,
+	     1, 2, 4, 8, 16, 32, 64, 128,
 	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
 	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
 	     16777216, 33554432, 67108864, 134217728,
 	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, AParts, #=, A),
-	scalar_product(T, BParts, #=, B),
-	scalar_product(T, CParts, #=, C),
-	scalar_product(T, XParts, #=, X),
-	maplist(f_1bit_0, AParts, BParts, CParts, XParts).
+	scalar_product(T, [_ALast | AParts], #=, A),
+	scalar_product(T, [_BLast | BParts], #=, B),
+	scalar_product(T, [_CLast | CParts], #=, C),
+	scalar_product(T, [_XLast | XParts], #=, X),
+	maplist(Trans, AParts, BParts, CParts, XParts).
+
+transform_f_1bit(A, B, C, X) :-
+	transform_1bit(f_1bit_0, A, B, C, X).
 
 f_1bit_0(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
@@ -108,31 +112,15 @@ f_1bit_1(A, B, C, Result) :-
 	Result #= max(A*B,(1-A)*C).
 
 transform_i_1bit(A, B, C, X) :-
-	Limit is (2^32)-1,
-	[A, B, C, X] ins 0..Limit,
-	length(AParts, 32),
-	length(BParts, 32),
-	length(CParts, 32),
-	length(XParts, 32),
-	AParts ins 0..1,
-	BParts ins 0..1,
-	CParts ins 0..1,
-	XParts ins 0..1,
-	T = [1, 2, 4, 8, 16, 32, 64, 128,
-	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
-	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
-	     16777216, 33554432, 67108864, 134217728,
-	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, AParts, #=, A),
-	scalar_product(T, BParts, #=, B),
-	scalar_product(T, CParts, #=, C),
-	scalar_product(T, XParts, #=, X),
-	maplist(i_1bit_0, AParts, BParts, CParts, XParts).
+	transform_1bit(i_1bit_0, A, B, C, X).
 
 i_1bit_0(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
 	T #= max(A, 1-C),
 	xor_variant_1bit_5(T, B, Result).
+
+transform_h_1bit(A, B, C, X) :-
+	transform_1bit(xor_3var_1bit_0, A, B, C, X).
 
 dword_xor_1bit(A, B, X) :-
 	Limit is (2^32)-1,
@@ -288,7 +276,8 @@ md5_transform(f, X, Y, Z, Result) :-
 md5_transform(g, X, Y, Z, Result) :-
 	transform_f_1bit(Z, X, Y, Result).
 md5_transform(h, X, Y, Z, Result) :-
-	dword_xor_3var_1bit(X, Y, Z, Result).
+	transform_h_1bit(X, Y, Z, Result).
+	%dword_xor_3var_1bit(X, Y, Z, Result).
 md5_transform(i, X, Y, Z, Result) :-
 	transform_i_1bit(X, Y, Z, Result).
 % Trans is transformation letter
@@ -298,14 +287,16 @@ md5_transform(i, X, Y, Z, Result) :-
 % AC is round constatnt
 md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
 	S in 4..23,
-	[A, C, D, X] ins 0..0xFFFFffff,
+	X in 0..0xFFFFffff,
 	AC in 38016083..4294925233,
-	NB #= B mod 0x100000000,
-	md5_transform(Trans, NB, C, D, F),
+	A #>= 0,
+	B #>= 0,
+	C #>= 0,
+	D #>= 0,
+	Result #> 0,
+	md5_transform(Trans, B, C, D, F),
 	Sum #= A + F + X + AC,
-	S2 #= 32 - S,
-	Rotated #= Sum * 2^S + ((Sum mod 0x100000000) // 2^S2), % rotate left S times
-	Result #= Rotated + B.
+	Result #= B + Sum * 2^S + ((Sum mod 0x100000000) // 2^(32-S)). % rotate left S times
 md5_bytes_to_dwords([], []).
 md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
 	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
@@ -336,10 +327,9 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, RotValue),
 	nth0(Index, Dwords, X),
-	NB #= B mod 0x100000000,
 	md5_transform_list(Trans, A, B, C, D, X, RotValue, AC, Result),
 	NewRound is Round + 1,
-	md5_transform_states(NewRound, [ D, Result, NB, C ], Dwords, NewStates).
+	md5_transform_states(NewRound, [ D, Result, B, C ], Dwords, NewStates).
 
 test_md5_transform :-
 	L = [1732584193,4023233417,2562383102,271733878],
