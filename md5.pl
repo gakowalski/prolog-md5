@@ -8,21 +8,6 @@
 		  if_between/4
 	      ]).
 
-dword_and(A, B, And) :-
-	And #=< A,
-	And #=< B,
-	dword_xor(A, B, Xor),
-	And #= (A + B - Xor)//2.
-
-dword_or(A, B, Or) :-
-	Or #>= A,
-	Or #>= B,
-	dword_xor(A, B, Xor),
-	Or #= (A + B + Xor)//2.
-
-dword_not(A, NotA) :-
-	NotA #= 0xFFFFFFFF - A.
-
 % dword_xor/3
 % True if X is equal to A xor B and A, B and C are 32-bit unsigned
 % integers.
@@ -250,6 +235,7 @@ md5_final(States, Buffer, BitCount, Digest) :-
 	md5_final_padlen(Index, PadLen), % PadLen in 1..64
 	md5_update(States, NewStates, Buffer, NewBuffer, [128 | Padding], PadLen, BitCount, NewBC), % true rel
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, NewBC, _). %true rel
+
 % (index < 56) ? (56 - index) : (120 - index);
 % true relation
 md5_final_padlen(Index, PadLen) :-
@@ -257,6 +243,7 @@ md5_final_padlen(Index, PadLen) :-
 	PadLen in 1..64,
 	if_greater_equal(Index, 56, Is_Greater_Equal),
 	PadLen #= (56 + 64*Is_Greater_Equal)-Index.
+
 dword_align(Input, Output, Length) :-
 	% dodac domeny dla wszystkich argumentow
 	PaddingLen in 0..24,
@@ -265,43 +252,17 @@ dword_align(Input, Output, Length) :-
 	maplist(=(0), Padding),
 	append(Input, Padding, Output).
 
-% #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
-% #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
-% #define H(x, y, z) ((x) ^ (y) ^ (z))
-% #define I(x, y, z) ((y) ^ ((x) | (~z)))
+md5_transform(f, X, Y, Z, Result) :- transform_f_1bit(X, Y, Z, Result).
+md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
+md5_transform(h, X, Y, Z, Result) :- transform_h_1bit(X, Y, Z, Result).
+md5_transform(i, X, Y, Z, Result) :- transform_i_1bit(X, Y, Z, Result).
 
-% md5_transform(type, x, y, z, result).
-md5_transform(f, X, Y, Z, Result) :-
-	transform_f_1bit(X, Y, Z, Result).
-md5_transform(g, X, Y, Z, Result) :-
-	transform_f_1bit(Z, X, Y, Result).
-md5_transform(h, X, Y, Z, Result) :-
-	transform_h_1bit(X, Y, Z, Result).
-	%dword_xor_3var_1bit(X, Y, Z, Result).
-md5_transform(i, X, Y, Z, Result) :-
-	transform_i_1bit(X, Y, Z, Result).
-% Trans is transformation letter
-% A, B, C, D are states
-% X is part of the message
-% S is rotation constant
-% AC is round constatnt
-md5_transform_list(Trans, A, B, C, D, X, S, AC, Result) :-
-	S in 4..23,
-	X in 0..0xFFFFffff,
-	AC in 38016083..4294925233,
-	A #>= 0,
-	B #>= 0,
-	C #>= 0,
-	D #>= 0,
-	Result #> 0,
-	md5_transform(Trans, B, C, D, F),
-	Sum #= A + F + X + AC,
-	Result #= B + Sum * 2^S + ((Sum mod 0x100000000) // 2^(32-S)). % rotate left S times
 md5_bytes_to_dwords([], []).
 md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
 	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
         %scalar_product([16777216,65536,256,1],[D0,D1,D2,D3],#=,Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
+
 % md5_transform_states/3
 % prawdziwa relacja
 % TRUE RELATION!
@@ -324,10 +285,21 @@ md5_transform_states(States, Bytes, NewStates) :-
 md5_transform_states(65, States, _, States).
 
 md5_transform_states(Round, [ A, B, C, D ], Dwords, NewStates) :-
+	X in 0..0xFFFFffff,
+	A #>= 0,
+	B #>= 0,
+	C #>= 0,
+	D #>= 0,
+	Result #> 0,
+
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
-	md5_rotate_constant(Rotation, RotValue),
+	md5_rotate_constant(Rotation, S),
 	nth0(Index, Dwords, X),
-	md5_transform_list(Trans, A, B, C, D, X, RotValue, AC, Result),
+
+	md5_transform(Trans, B, C, D, F),
+	Sum #= A + F + X + AC,
+	Result #= B + Sum * 2^S + ((Sum mod 0x100000000) // 2^(32-S)), % rotate left S times
+
 	NewRound is Round + 1,
 	md5_transform_states(NewRound, [ D, Result, B, C ], Dwords, NewStates).
 
@@ -344,6 +316,7 @@ test_md5_transform :-
 	md5_transform_states(L, M, N),
 	labeling([bisect], N),
 	N = [1272527619,3839322129,3276068592,3207945929].
+
 test_md5_transform_reverse :-
 	N = [1272527619,3839322129,3276068592,3207945929],
 	md5_transform_states(L, M, N),
@@ -358,38 +331,6 @@ test_md5_transform_reverse :-
 	      0,  0,  0,  0,  0,  0,  0,  0,
 	      0,  0,  0,  0,  0,  0,  0,  0,
 	      32,  0,  0,  0,  0,  0,  0,  0].
-test_md5_transform_list :-
-	A = 1732584193,
-	B = 4023233417,
-	C = 2562383102,
-	D = 271733878,
-	X = 1414743380,
-	RV = 7,
-	AC = 3614090360,
-	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
-	Result = 3468857630.
-test_md5_transform_list_reverse :-
-	Result = 3468857630,
-	RV = 7,
-	AC = 3614090360,
-	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
-	labeling([ffc, bisect], [A,B,C,D,X]),
-	A = 1732584193,
-	B = 4023233417,
-	C = 2562383102,
-	D = 271733878,
-	X = 1414743380.
-test_md5_transform_list_reverse_2 :-
-	Result = 3468857630,
-	RV = 7,
-	AC = 3614090360,
-	md5_transform_list(f, A, B, C, D, X, RV, AC, Result),
-	A = 1732584193,
-	B = 4023233417,
-	C = 2562383102,
-	D = 271733878,
-	labeling([ffc, bisect], [A,B,C,D,X]),
-	X = 1414743380.
 
 % md5_update(
 %    States, NewStates,
