@@ -30,6 +30,14 @@ xor_3var_1bit_4(A, B, C, Xor) :-
 	[A, B, C, Xor] ins 0..1,
 	Xor #= (A-B)^2*(1-2*C)+C.
 
+d_number_to_dword_bits(Number, Bits, 0) :-
+	integer(Number),
+	\+ground(Bits),
+	Number < 0xFFFFffff,
+	binary_number(B, Number),
+	length(Bits, 32),
+	append([_, B], Bits).
+
 number_to_dword_bits(Number, Bits, Overflow) :-
 	Number #>= 0,
 	length(Bits, 32),
@@ -43,16 +51,14 @@ number_to_dword_bits(Number, Bits, Overflow) :-
 	     268435456, 536870912, 1073741824, 2147483648],
 	scalar_product(T, [Overflow | Bits], #=, Number).
 
+% from http://stackoverflow.com/a/28339379/925196
+binary_number(Bs, N) :- var(N) -> foldl(shift, Bs, 0, N) ; bitgen(N, Rs), reverse(Rs, Bs).
+shift(B, C, R) :- R is (C << 1) + B.
+bitgen(N, [B|Bs]) :- B is N /\ 1 , ( N > 1 -> M is N >> 1, bitgen(M, Bs) ; Bs = [] ).
+
 transform_1bit(Trans, AB, BB, CB, X) :-
 	number_to_dword_bits(X, XB, 0),
 	maplist(Trans, AB, BB, CB, XB).
-
-old_transform_1bit(Trans, A, B, C, X) :-
-	number_to_dword_bits(A, ABits, _),
-	number_to_dword_bits(B, BBits, _),
-	number_to_dword_bits(C, CBits, _),
-	number_to_dword_bits(X, XBits, 0),
-	maplist(Trans, ABits, BBits, CBits, XBits).
 
 transform_f_1bit(A, B, C, X) :-
 	transform_1bit(f_1bit_1, A, B, C, X).
@@ -248,15 +254,19 @@ md5_transform_states(States, Bytes, New_States) :-
 	number_to_dword_bits(S2, S2B, _),
 	number_to_dword_bits(S3, S3B, _),
 	number_to_dword_bits(S4, S4B, _),
-	md5_transform_states(1, States, [S2B, S3B, S4B], Dwords, Result, _).
+	md5_transform_states(1, States, [S2B, S3B, S4B], Dwords, Result).
 
-md5_transform_states(65, States, StatesB,  _, States, StatesB).
+md5_transform_states(65, States, _,  _, States).
 
-md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States, NSB) :-
+md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	Result #> 0,
+	maplist(domain(dword), Dwords),
 	domain(dword, X),
 	domain(states, [A, B, C, D]),
 	domain(states, New_States),
+	BB ins 0..1,
+	CB ins 0..1,
+	DB ins 0..1,
 
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, S),
@@ -278,7 +288,7 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States, NS
 	number_to_dword_bits(Result, RB, _),
 
 	Next_Round is Round + 1,
-	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States, NSB).
+	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States).
 
 % Prawdziwa relacja!
 
