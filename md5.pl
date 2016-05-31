@@ -30,46 +30,29 @@ xor_3var_1bit_4(A, B, C, Xor) :-
 	[A, B, C, Xor] ins 0..1,
 	Xor #= (A-B)^2*(1-2*C)+C.
 
-transform_1bit(Trans, A, B, C, X) :-
-	length(AParts, 32),
-	length(BParts, 32),
-	length(CParts, 32),
-	length(XParts, 32),
-	AParts ins 0..1,
-	BParts ins 0..1,
-	CParts ins 0..1,
-	XParts ins 0..1,
+number_to_dword_bits(Number, Bits, Overflow) :-
+	Number #>= 0,
+	length(Bits, 32),
+	Bits ins 0..1,
+	Overflow #>= 0,
 	T = [ 0x100000000,
 	     1, 2, 4, 8, 16, 32, 64, 128,
 	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
 	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
 	     16777216, 33554432, 67108864, 134217728,
 	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, [_ALast | AParts], #=, A),
-	scalar_product(T, [_BLast | BParts], #=, B),
-	scalar_product(T, [_CLast | CParts], #=, C),
-	scalar_product(T, [_XLast | XParts], #=, X),
-	maplist(Trans, AParts, BParts, CParts, XParts).
+	scalar_product(T, [Overflow | Bits], #=, Number).
 
-transform_2bit(Trans, A, B, C, X) :-
-	length(AParts, 16),
-	length(BParts, 16),
-	length(CParts, 16),
-	length(XParts, 16),
-	AParts ins 0..3,
-	BParts ins 0..3,
-	CParts ins 0..3,
-	XParts ins 0..3,
-	T = [ 0x100000000,
-	     1, 4, 16, 64,
-	     256, 1024, 4096, 16384,
-	     65536, 262144, 1048576, 4194304,
-	     16777216, 67108864, 268435456, 1073741824],
-	scalar_product(T, [_ALast | AParts], #=, A),
-	scalar_product(T, [_BLast | BParts], #=, B),
-	scalar_product(T, [_CLast | CParts], #=, C),
-	scalar_product(T, [_XLast | XParts], #=, X),
-	maplist(Trans, AParts, BParts, CParts, XParts).
+transform_1bit(Trans, AB, BB, CB, X) :-
+	number_to_dword_bits(X, XB, 0),
+	maplist(Trans, AB, BB, CB, XB).
+
+old_transform_1bit(Trans, A, B, C, X) :-
+	number_to_dword_bits(A, ABits, _),
+	number_to_dword_bits(B, BBits, _),
+	number_to_dword_bits(C, CBits, _),
+	number_to_dword_bits(X, XBits, 0),
+	maplist(Trans, ABits, BBits, CBits, XBits).
 
 transform_f_1bit(A, B, C, X) :-
 	transform_1bit(f_1bit_1, A, B, C, X).
@@ -141,7 +124,7 @@ md5_benchmark :-
 	!.
 
 %%
-% uwaga do samego siebie: istnieje relacji oznacza, ze rzecz musi byc
+% uwaga do samego siebie: istnienie relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
 %%
 domain(byte, Byte) :-
@@ -237,6 +220,20 @@ md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
         %scalar_product([16777216,65536,256,1],[D0,D1,D2,D3],#=,Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
 
+divide_list(C, List, Left, Right) :-
+	append([Left, Right], List),
+	length(Left, C).
+
+dword_rotate_left(C, Input, Output) :-
+	(   nonvar(Input)
+	->
+	divide_list(C, Input, Left, Right),
+	append(Right, Left, Output)
+	;
+	D is 32 - C,
+	divide_list(D, Output, Left, Right),
+	append(Right, Left, Input)).
+
 md5_transform_states(States, Bytes, New_States) :-
 	maplist(domain(states), [States, New_States]),
 	domain(buffer, Bytes),
@@ -248,11 +245,14 @@ md5_transform_states(States, Bytes, New_States) :-
 	O2 #= S2 + T2,
 	O3 #= S3 + T3,
 	O4 #= S4 + T4,
-	md5_transform_states(1, States, Dwords, Result).
+	number_to_dword_bits(S2, S2B, _),
+	number_to_dword_bits(S3, S3B, _),
+	number_to_dword_bits(S4, S4B, _),
+	md5_transform_states(1, States, [S2B, S3B, S4B], Dwords, Result, _).
 
-md5_transform_states(65, States, _, States).
+md5_transform_states(65, States, StatesB,  _, States, StatesB).
 
-md5_transform_states(Round, [ A, B, C, D ], Dwords, New_States) :-
+md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States, NSB) :-
 	Result #> 0,
 	domain(dword, X),
 	domain(states, [A, B, C, D]),
@@ -264,12 +264,21 @@ md5_transform_states(Round, [ A, B, C, D ], Dwords, New_States) :-
 	New_Index is Index + 1,
 	element(New_Index, Dwords, X),
 
-	md5_transform(Trans, B, C, D, F),
+	md5_transform(Trans, BB, CB, DB, F),
+
 	Sum #= A + F + X + AC,
+	%number_to_dword_bits(Sum, SB, _),
+
+	%dword_rotate_left(S, SB, SB2),
+	%number_to_dword_bits(S2, SB2, 0),
+
+	%Result #= B + S2;
+
 	Result #= B + Sum * 2^S + (Sum // 2^(32-S)) mod (2^S), % rotate left S times
+	number_to_dword_bits(Result, RB, _),
 
 	Next_Round is Round + 1,
-	md5_transform_states(Next_Round, [ D, Result, B, C ], Dwords, New_States).
+	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States, NSB).
 
 % Prawdziwa relacja!
 
