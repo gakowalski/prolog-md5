@@ -28,6 +28,7 @@ dword_not(A, NotA) :-
 % integers.
 dword_xor(A, B, X) :-
 	dword_xor_2bit(A, B, X).
+	%bitwise_decimal(A, B, _, _, X, _).
 
 dword_xor_3var_1bit(A, B, C, X) :-
 	Limit is (2^32)-1,
@@ -153,6 +154,74 @@ ultimate_xor(A, B, Xor) :-
 	if_greater_equal(A, 4, A2),
 	if_greater_equal(B, 4, B2),
 	Xor #= Xor_Base + abs(A2*4 - B2*4).
+
+bitwise_decimal2(A, B, And, Or, Xor, M) :-
+	A #>= 0,
+	B #>= 0,
+	And #>= 0,
+	Or #>= 0,
+	Xor #>= 0,
+	M #>= 0,
+	zcompare(Order, A, B),
+	bitwise_decimal2_0(Order, A, B, And, Or, Xor, M).
+bitwise_decimal2_0(=, A, A, A, A, 0, 0).
+bitwise_decimal2_0(<, A, B, And, Or, Xor, M) :-
+	And #= A - M,
+	Or #= B + M,
+	Xor #= B-A + 2*M.
+bitwise_decimal2_0(>, A, B, And, Or, Xor, M) :-
+	And #= B - M,
+	Or #= A + M,
+	Xor #= A-B + 2*M.
+
+bitwise_decimal(A, B, And, Or, Xor, M, A_Is_Not_B) :-
+	A #>= 0,
+	B #>= 0,
+	And #>= 0,
+	Or #>= 0,
+	Xor #>= 0,
+	M #>= 0,
+	if_equal(A, 0, AZero),
+	if_equal(B, 0, BZero),
+	if_equal(A, B, AisB),
+	M #=< max(A,B) * (1-AZero) * (1-BZero) * (1-AisB),
+	And #= min(A,B) - M,
+	Or #= max(A,B) + M,
+	Xor #= abs(A-B) + 2*M,
+	if_equal(And, 0, Is_And_Zero),
+	if_equal(Or, Xor, Is_Or_Xor_Equal),
+	A_Is_Not_B #= Is_And_Zero * Is_Or_Xor_Equal.
+
+% still unused properties:
+% M must be 0 for A=B, A=0, B=0
+% and(0,X)=0
+% and(X,X)=X
+% or(X,0)=X
+% or(X,X)=X
+% xor(X,0)=X
+% xor(X,X)=0,
+% A is not B when XOR = OR and AND = 0.
+% Hamming distance of two binary numbers is a number of 1 in result of
+% xor(A, B).
+
+xor_exp(A, B, C, MC) :-
+	%A0 #= A+MA,
+	%B0 #= B+MB,
+	C0 #= C+MC,
+	xor_exp0(A, B, C, MC),
+	xor_exp0(A, C0, B, 0),
+	xor_exp0(B, A, C, MC),
+	xor_exp0(B, C0, A, 0),
+	xor_exp0(C0, A, B, 0),
+	xor_exp0(C0, B, A, 0).
+
+xor_exp0(A, B, Xor, M) :-
+	A #>= 0,
+	B #>= 0,
+	M #>= 0,
+	M #=< A+B-abs(A-B),
+	Xor #>= 0,
+	Xor #= abs(A-B) + M.
 
 % inferences: 5M, 156M |
 % secodns: 0.8, 27 |
