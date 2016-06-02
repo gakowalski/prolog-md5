@@ -113,37 +113,42 @@ test_if_equal :-
 	Equal #= 1,
 	NEqual #= 0.
 
-% ====
-% ZERO
-% ====
+% =============
+% ZERO, NONZERO
+% =============
+
+if_nonzero(X, Result) :-
+	2*Result #= 1+(-1)^(2^X^2).
+
+if_nonzero_variant_0(X, Result) :-
+	Result #= 1-0^X.
+
+if_nonzero_variant_1(X, Result) :-
+	Result #= 0^0^X.
 
 if_zero(X, Result) :-
-	if_equal(X, 0, Result).
+	2*Result #= 1-(-1)^(2^X^2).
 
 if_zero_variant_0(X, Result) :-
+	Result #= 0^X.
+
+if_zero_variant_1(X, Result) :-
 	A #= -1-X,
 	B #= 1-X,
 	Result * (-4) #= (A-abs(A)) * (B+abs(B)).
-
-if_nonzero(X, Result) :-
-	if_equal(X, 0, Is_Equal),
-	Result #= 1 - Is_Equal.
 
 % =========
 % EVEN, ODD
 % =========
 
 if_even(X, Result) :-
-	if_even_raw(X, Is_Even),
-	2 * Result #= 1 + Is_Even.
+	2*Result #= 1+(-1)^X.
 
 if_odd(X, Result) :-
-	if_even_raw(X, Is_Even),
-	2 * Result #= 1 - Is_Even.
+	2*Result #= 1-(-1)^X.
 
-if_even_raw(X, Result) :-
-	% needs domain declaration for Result
-	Result #= (-1)^X.
+if_mod(X, 2, Result) :-
+	if_odd(X, Result).
 
 % =============================
 % OTHER, NOT USED, EXPERIMENTAL
@@ -152,6 +157,12 @@ if_even_raw(X, Result) :-
 internal_abs(X, Abs) :-
 	% needs domain declaration for Abs if possible
 	Abs #= max(X, -X).
+
+internal_max(A, B, Max) :-
+	2*Max #= A + B + abs(A-B).
+
+internal_min(A, B, Min) :-
+	2*Min #= A + B - abs(A-B).
 
 if_bit_set(X, 1, Set) :-
 	Set in 0..1,
@@ -168,6 +179,7 @@ if_bit_set(X, C, Set) :-
 internal_mod_2(X, Mod) :-
 	Mod in 0..1,
 	2 * Mod #= 1+(-1)^(X+1).
+
 
 
 
