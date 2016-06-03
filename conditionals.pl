@@ -92,6 +92,10 @@ if_outside(X, L, H, Result) :-
 % =====
 
 if_equal(X, V, Is_Equal) :-
+	% modified if_zero
+        2*Is_Equal #= 1-(-1)^(2^(X-V)^2).
+
+if_equal_variant_1(X, V, Is_Equal) :-
 	if_equal_raw(X, V, Result),
 	Is_Equal #= Result * (-1).
 
@@ -149,6 +153,25 @@ if_odd(X, Result) :-
 
 if_mod(X, 2, Result) :-
 	if_odd(X, Result).
+
+% Result = 1 if X mod 4 = 0
+if_mod(X, 4, Result) :-
+	internal_AS_0(X, AS_0),
+	internal_AS_1(X, AS_1),
+	Sum #= AS_0 + AS_1,
+	if_equal(Sum, 2, Result).
+
+% ==================
+% alternating series
+% ==================
+
+% (1, 1, -1, -1)
+internal_AS_0(X, Result) :-
+	Result #= (-1)^(((X-1)*X)//2).
+
+% (1, -1, -1, 1)
+internal_AS_1(X, Result) :-
+	Result #= (-1)^(((X+1)*X)//2).
 
 % =============================
 % OTHER, NOT USED, EXPERIMENTAL
