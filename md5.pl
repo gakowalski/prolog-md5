@@ -51,6 +51,69 @@ number_to_dword_bits(Number, Bits, Overflow) :-
 	     268435456, 536870912, 1073741824, 2147483648],
 	scalar_product(T, [Overflow | Bits], #=, Number).
 
+pne_encode(Number, Encoded, Overflow) :-
+	number_to_dword_bits(Number, Bits, Overflow),
+	prime_number_encoded_dword_bits(Encoded, Bits).
+
+prime_number_encoded_dword_bits(Encoded, Bits) :-
+	Encoded #>= 0,
+	length(Bits, 32),
+	Bits ins 0..1,
+	Primes =
+	[2, 3, 5, 7, 11, 13, 17, 19, 23, 29,
+	 31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
+	 73, 79, 83, 89, 97, 101, 103, 107, 109, 113,
+	 127, 131],
+	foldl(pne_fold, Primes, Bits, 1, Encoded).
+
+pne_fold(Prime, Bit, V0, V1) :-
+	V0 #>= 1,
+	V1 #= V0*Prime^Bit.
+
+pne_not(A, NotA) :-
+	A #>= 0,
+	NotA #>= 0,
+	number_to_dword_bits(0xFFFFffff, Max, 0),
+	prime_number_encoded_dword_bits(Max_Encoded, Max),
+	A*NotA #= Max_Encoded.
+
+pne_or(A, B, AorB) :-
+	A #>= 0,
+	B #>= 0,
+	AorB #>= 0,
+	T #= A*B,
+	pne_norm(T, AorB).
+
+pne_nor(A, B, AnorB) :-
+	pne_or(A, B, AorB),
+	pne_not(AorB, AnorB).
+
+pne_and(A, B, AandB) :-
+	pne_not(A, NotA),
+	pne_not(B, NotB),
+	pne_nor(NotA, NotB, AandB).
+
+pne_xor(A, B, AxorB) :-
+	pne_or(A, B, AorB),
+	pne_and(A, B, AandB),
+	AandB * AxorB #= AorB .
+
+pne_norm(A, NormA) :-
+	A #>= 0,
+	NormA #>= 0,
+	NormA #=< A,
+	Primes =
+	[2, 3, 5, 7, 11, 13, 17, 19, 23, 29,
+	 31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
+	 73, 79, 83, 89, 97, 101, 103, 107, 109, 113,
+	 127, 131],
+	foldl(pne_fold2, Primes, [A, 1], [A, NormA]).
+
+pne_fold2(Prime, [Encoded, V0], [Encoded, V1]) :-
+	V1 #>= 1,
+	V1 #= V0*Prime^0^(Encoded mod Prime).
+
+
 % from http://stackoverflow.com/a/28339379/925196
 binary_number(Bs, N) :- var(N) -> foldl(shift, Bs, 0, N) ; bitgen(N, Rs), reverse(Rs, Bs).
 shift(B, C, R) :- R is (C << 1) + B.
