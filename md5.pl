@@ -51,7 +51,7 @@ number_to_dword_bits(Number, Bits, Overflow) :-
 	     268435456, 536870912, 1073741824, 2147483648],
 	scalar_product(T, [Overflow | Bits], #=, Number).
 
-pne_encode(Number, Encoded, Overflow) :-
+pne_encoded(Number, Encoded, Overflow) :-
 	number_to_dword_bits(Number, Bits, Overflow),
 	prime_number_encoded_dword_bits(Encoded, Bits).
 
@@ -276,10 +276,25 @@ md5_final(States, Buffer, Length, Digest) :-
 	New_Length #= Length + PadLen,
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, New_Length). %true rel
 
-md5_transform(f, X, Y, Z, Result) :- transform_f_1bit(X, Y, Z, Result).
-md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
-md5_transform(h, X, Y, Z, Result) :- transform_h_1bit(Z, X, Y, Result).
-md5_transform(i, X, Y, Z, Result) :- transform_i_1bit(X, Y, Z, Result).
+%md5_transform(f, X, Y, Z, Result) :- transform_f_1bit(X, Y, Z, Result).
+%md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
+%md5_transform(h, X, Y, Z, Result) :- transform_h_1bit(Z, X, Y, Result).
+%md5_transform(i, X, Y, Z, Result) :- transform_i_1bit(X, Y, Z, Result).
+
+md5_transform(f, X, Y, Z, Result) :-
+	pne_and(X, Y, XandY),
+	pne_not(X, NotX),
+	pne_and(NotX, Z, NXandZ),
+	pne_or(XandY, NXandZ, Result).
+md5_transform(g, X, Y, Z, Result) :-
+	md5_transform(f, Z, X, Y, Result).
+md5_transform(h, X, Y, Z, Result) :-
+	pne_xor(X, Y, XxorY),
+	pne_xor(XxorY, Z, Result).
+md5_transform(i, X, Y, Z, Result) :-
+	pne_not(Z, NotZ),
+	pne_or(NotZ, X, NZorX),
+	pne_xor(NZorX, Y, Result).
 
 md5_bytes_to_dwords([], []).
 md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
@@ -314,9 +329,12 @@ md5_transform_states(States, Bytes, New_States) :-
 	O2 #= S2 + T2,
 	O3 #= S3 + T3,
 	O4 #= S4 + T4,
-	number_to_dword_bits(S2, S2B, _),
-	number_to_dword_bits(S3, S3B, _),
-	number_to_dword_bits(S4, S4B, _),
+	%number_to_dword_bits(S2, S2B, _),
+	%number_to_dword_bits(S3, S3B, _),
+	%number_to_dword_bits(S4, S4B, _),
+	pne_encoded(S2, S2B, _),
+	pne_encoded(S3, S3B, _),
+	pne_encoded(S4, S4B, _),
 	md5_transform_states(1, States, [S2B, S3B, S4B], Dwords, Result).
 
 md5_transform_states(65, States, _,  _, States).
@@ -327,9 +345,9 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	domain(dword, X),
 	domain(states, [A, B, C, D]),
 	domain(states, New_States),
-	BB ins 0..1,
-	CB ins 0..1,
-	DB ins 0..1,
+	BB #> 0,
+	CB #> 0,
+	DB #> 0,
 
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, S),
@@ -337,7 +355,8 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	New_Index is Index + 1,
 	element(New_Index, Dwords, X),
 
-	md5_transform(Trans, BB, CB, DB, F),
+	md5_transform(Trans, BB, CB, DB, FB),
+	pne_encoded(F, FB, _),
 
 	Sum #= A + F + X + AC,
 	%number_to_dword_bits(Sum, SB, _),
@@ -348,7 +367,8 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	%Result #= B + S2;
 
 	Result #= B + Sum * 2^S + (Sum // 2^(32-S)) mod (2^S), % rotate left S times
-	number_to_dword_bits(Result, RB, _),
+	%number_to_dword_bits(Result, RB, _),
+	pne_encoded(Result, RB, _),
 
 	Next_Round is Round + 1,
 	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States).
