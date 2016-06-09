@@ -277,14 +277,18 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	md5_transform(Trans, BB, CB, DB, F),
 
 	Sum #= A + F + X + AC,
-	%number_to_dword_bits(Sum, SB, _),
 
-	%dword_rotate_left(S, SB, SB2),
-	%number_to_dword_bits(S2, SB2, 0),
+	%Result #= B + Sum * 2^S + (Sum // 2^(32-S)) mod (2^S), % rotate left S times
+	%Result #= B + Sum * 2^S + Sum // 2^(32-S) - (2^S)*((Sum // 2^(32-S))//(2^S)), % rotate left S times
+	%Result #= B + Sum * 2^S + Sum // 2^(32-S) - (2^S)*(Sum // 2^32), % rotate left S times
+	%Result #= B + (2^S)*(Sum - Sum // 2^32) + Sum // 2^(32-S), % rotate left S times
+	%Result #= (B*2^(32-S) + (2^S)*(Sum - Sum// 2^32)*(2^(32-S)) + Sum) // 2^(32-S), % rotate left S times
+	%Result #= (B*2^(32-S) + (2^32)*(Sum - Sum// 2^32) + Sum) // 2^(32-S), % rotate left S times
+	%Result #= B + ((2^32+1)*Sum - (2^32)*(Sum//2^32)) // 2^(32-S), % rotate left S times
+	%Result #= B + ((2^32+1)*Sum - (Sum - (Sum mod 2^32))) // 2^(32-S), % rotate left S times
+	%Result #= B + ((2^32)*Sum + Sum mod 2^32) // 2^(32-S), % rotate left S times
+	Result #= B + (2^S)*Sum + (Sum mod 2^32) // 2^(32-S), % rotate left S times
 
-	%Result #= B + S2;
-
-	Result #= B + Sum * 2^S + (Sum // 2^(32-S)) mod (2^S), % rotate left S times
 	number_to_dword_bits(Result, RB, _),
 
 	Next_Round is Round + 1,
