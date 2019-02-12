@@ -5,39 +5,10 @@
 		  if_greater_equal/3
 	      ]).
 
-xor_3var_1bit_0(A, B, C, Xor) :-
+% 390 -> 367 mln inf.
+xor_3var_1bit_5(A, B, C, Xor) :-
 	[A, B, C, Xor] ins 0..1,
-	Sum0 #= A+B,
-	Sum1 #= Sum0*(2-Sum0) + C,
-	Xor #= Sum1*(2-Sum1).
-
-xor_3var_1bit_1(A, B, C, Xor) :-
-	[A, B, C, Xor] ins 0..1,
-	Xor #= (-A^2-2*A*B+2*A-B^2+2*B+C)*(A^2+2*A*B-2*A+B^2-2*B-C+2).
-
-xor_3var_1bit_2(A, B, C, Xor) :-
-	[A, B, C, Xor] ins 0..1,
-	%Xor #= (-2*A*B+A+B+C)*(2*A*B-A-B-C+2).
-	Sum #= A+B+C,
-	Mul #= 2*A*B,
-	Xor #= (Sum-Mul)*(Mul-Sum+2).
-
-xor_3var_1bit_3(A, B, C, Xor) :-
-	[A, B, C, Xor] ins 0..1,
-	Xor #= (A-B-C)^2-4*B*C*(1-A).
-
-% the best now?
-xor_3var_1bit_4(A, B, C, Xor) :-
-	[A, B, C, Xor] ins 0..1,
-	Xor #= (A-B)^2*(1-2*C)+C.
-
-d_number_to_dword_bits(Number, Bits, 0) :-
-	integer(Number),
-	\+ground(Bits),
-	Number < 0xFFFFffff,
-	binary_number(B, Number),
-	length(Bits, 32),
-	append([_, B], Bits).
+	Xor #= (A+B+C) mod 2.
 
 number_to_dword_bits(Number, Bits, Overflow) :-
 	Number #>= 0,
@@ -64,32 +35,24 @@ transform_1bit(Trans, AB, BB, CB, X) :-
 transform_f_1bit(A, B, C, X) :-
 	transform_1bit(f_1bit_1, A, B, C, X).
 
-f_1bit_0(A, B, C, Result) :-
-	[A, B, C, Result] ins 0..1,
-	Result #= max(min(A,B),min(1-A,C)).
-
 f_1bit_1(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
-	% Result #= max(A*B,(1-A)*C). % 415 mln inf
-	% Result #= A*B + (1-A)*C. % 398 mln inf
-	Result #= A*(B-C) + C. % 390 mln inf
-
-f_1bit_2(A, B, C, Result) :-
-	X #= A*B,
-	Y #= (1-A)*C,
-	if_greater_equal(X, Y, Is_Greater),
-	Result #= Is_Greater*X + (1-Is_Greater)*Y.
+	Result #= A*(B-C) + C.
 
 transform_i_1bit(A, B, C, X) :-
-	transform_1bit(i_1bit_0, A, B, C, X).
+	transform_1bit(i_1bit_1, A, B, C, X).
 
 i_1bit_0(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
 	T #= max(A, 1-C),
 	xor_variant_1bit_5(T, B, Result).
 
+i_1bit_1(A, B, C, Result) :-
+	[A, B, C, Result] ins 0..1,
+	Result #= B + (-1)*(1-A*(1-C)).
+
 transform_h_1bit(A, B, C, X) :-
-	transform_1bit(xor_3var_1bit_0, A, B, C, X).
+	transform_1bit(xor_3var_1bit_5, A, B, C, X).
 
 xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
 xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
