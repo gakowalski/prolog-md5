@@ -1,4 +1,5 @@
 :- use_module(library(clpfd)).
+:- use_module(library(thread)).
 :- use_module('conditionals.pl', [
 		  if_lesser/3,
 		  if_greater_equal/3
@@ -69,7 +70,9 @@ f_1bit_0(A, B, C, Result) :-
 
 f_1bit_1(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
-	Result #= max(A*B,(1-A)*C).
+	% Result #= max(A*B,(1-A)*C). % 415 mln inf
+	% Result #= A*B + (1-A)*C. % 398 mln inf
+	Result #= A*(B-C) + C. % 390 mln inf
 
 f_1bit_2(A, B, C, Result) :-
 	X #= A*B,
@@ -116,7 +119,8 @@ dword_xor_2bit(A, B, X) :-
 	maplist(xor_variant_2bit_0, AParts, BParts, XParts).
 
 xor_variant_2bit_0(A, B, Xor) :-
-	Xor #= ((A + B*((-1)^A)) mod 4).
+	Xor #= ((A + B*((-1)^A)) mod 4),
+	Xor #= ((B + A*((-1)^B)) mod 4).
 
 test_benchmark(Test) :-
 	print(Test), time(Test).
@@ -361,9 +365,17 @@ test_md5_reverse_true :-
 	length(Word, Len),
 	Len < 16,
 	Word ins 32..126,
-	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]),
+	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]), /* 033bd94b1168d7e4f0d644c3c95e35bf */
 	labeling([bisect], Word),
 	print(Word), nl.
+
+test_md5_reverse_true_2 :-
+	length(Word, 4),
+	Word ins 32..126,
+	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]), /* 033bd94b1168d7e4f0d644c3c95e35bf */
+	labeling([bisect], Word),
+	print(Word), nl.
+
 
 % OPIS: nazwa stalej, wartosc
 % Min = 4
