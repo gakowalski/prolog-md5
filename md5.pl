@@ -5,34 +5,17 @@
 		  if_greater_equal/3
 	      ]).
 
-/*
- * Regular bits:
- * ?- test_benchmark(test_md5).
-test_md5
-% 6,053,001 inferences, 0.563 CPU in 0.565 seconds (99% CPU, 10760891 Lips)
-true .
-
-?- test_benchmark(test_md5_reverse).
-test_md5_reverse
-% 290,421,731 inferences, 35.688 CPU in 35.812 seconds (100% CPU, 8137912 Lips)
-true .
- *
- */
-
-% TODO: Overflow value is wrong now, it only represent one bit and
-% should more
-number_to_dword_signed_bits(Number, Bits, Overflow) :-
-	Number #>= 0,
+number_to_dword_signed_bits(Number, Bits) :-
+	Number in 0..4294967295,
 	length(Bits, 32),
 	Bits ins -1\/1,
-	Overflow #>= 0,
-	T = [ 0x200000000, 0x100000000, % TODO: Check if this is reasonable for reverse md5
+	T = [
 	     1, 2, 4, 8, 16, 32, 64, 128,
 	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
 	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
 	     16777216, 33554432, 67108864, 134217728,
 	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, [_, Overflow | Bits], #=, Product),
+	scalar_product(T, Bits, #=, Product),
 	2*Number - (2^32-1) #= Product.
 
 bit_to_signed_bit(Bit, SBit) :-
@@ -48,12 +31,8 @@ binary_number(Bs, N) :- var(N) -> foldl(shift, Bs, 0, N) ; bitgen(N, Rs), revers
 shift(B, C, R) :- R is (C << 1) + B.
 bitgen(N, [B|Bs]) :- B is N /\ 1 , ( N > 1 -> M is N >> 1, bitgen(M, Bs) ; Bs = [] ).
 
-transform_1bit(Trans, AB, BB, CB, X) :-
-	number_to_dword_signed_bits(X, XB, 0),
-	maplist(Trans, AB, BB, CB, XB).
-
 transform_f_1bit(A, B, C, X) :-
-	transform_1bit(f_1sbit_0, A, B, C, X).
+	maplist(f_1sbit_0, A, B, C, X).
 
 f_1sbit_0(A, B, C, Result) :-
 	not_1sbit_0(A, NotA),
@@ -62,7 +41,7 @@ f_1sbit_0(A, B, C, Result) :-
 	or_1sbit_0(AAndB, NAAndC, Result).
 
 transform_i_1bit(A, B, C, X) :-
-	transform_1bit(i_1sbit_0, A, B, C, X).
+	maplist(i_1sbit_0, A, B, C, X).
 
 i_1sbit_0(A, B, C, Result) :-
 	not_1sbit_0(C, NotC),
@@ -73,7 +52,7 @@ i_1sbit_1(A, B, C, Result) :-
 	2*Result*B #= C-A - A*C - 1.
 
 transform_h_1bit(A, B, C, X) :-
-	transform_1bit(xor_1sbit_3vars_0, A, B, C, X).
+	maplist(xor_1sbit_3vars_0, A, B, C, X).
 
 not_1sbit_0(A, Not) :-
 	Not #= (-1)*A.
@@ -103,6 +82,10 @@ md5_benchmark :-
 % uwaga do samego siebie: istnienie relacji oznacza, ze rzecz musi byc
 % zapisywalna takze jako dane, jako "tabelka relacji"
 %%
+domain(sbit, Bit) :-
+	Bit in -1\/1.
+domain(sbit_list, Bits) :-
+	Bits ins -1\/1.
 domain(byte, Byte) :-
 	Byte in 0..255.
 domain(dword, Dword) :-
@@ -221,9 +204,14 @@ md5_transform_states(States, Bytes, New_States) :-
 	O2 #= S2 + T2,
 	O3 #= S3 + T3,
 	O4 #= S4 + T4,
-	number_to_dword_signed_bits(S2, S2B, _),
-	number_to_dword_signed_bits(S3, S3B, _),
-	number_to_dword_signed_bits(S4, S4B, _),
+
+	S2O #= S2 mod 0x100000000,
+	S3O #= S3 mod 0x100000000,
+	S4O #= S4 mod 0x100000000,
+
+	number_to_dword_signed_bits(S2O, S2B),
+	number_to_dword_signed_bits(S3O, S3B),
+	number_to_dword_signed_bits(S4O, S4B),
 	md5_transform_states(1, States, [S2B, S3B, S4B], Dwords, Result).
 
 md5_transform_states(65, States, _,  _, States).
@@ -234,9 +222,7 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	domain(dword, X),
 	domain(states, [A, B, C, D]),
 	domain(states, New_States),
-	BB ins 0..1,
-	CB ins 0..1,
-	DB ins 0..1,
+	maplist(domain(sbit_list), [BB, CB, DB]),
 
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, S),
@@ -244,7 +230,8 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	New_Index is Index + 1,
 	element(New_Index, Dwords, X),
 
-	md5_transform(Trans, BB, CB, DB, F),
+	md5_transform(Trans, BB, CB, DB, FB),
+	number_to_dword_signed_bits(F, FB),
 
 	Sum #= A + F + X + AC,
 
@@ -259,7 +246,8 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	%Result #= B + ((2^32)*Sum + Sum mod 2^32) // 2^(32-S), % rotate left S times
 	Result #= B + (2^S)*Sum + (Sum mod 2^32) // 2^(32-S), % rotate left S times
 
-	number_to_dword_signed_bits(Result, RB, _),
+	ResDw #= Result mod 0x100000000,
+	number_to_dword_signed_bits(ResDw, RB),
 
 	Next_Round is Round + 1,
 	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States).
