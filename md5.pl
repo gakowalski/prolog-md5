@@ -40,16 +40,12 @@ f_1bit_1(A, B, C, Result) :-
 	Result #= A*(B-C) + C.
 
 transform_i_1bit(A, B, C, X) :-
-	transform_1bit(i_1bit_1, A, B, C, X).
+	transform_1bit(i_1bit_0, A, B, C, X).
 
 i_1bit_0(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
 	T #= max(A, 1-C),
 	xor_variant_1bit_5(T, B, Result).
-
-i_1bit_1(A, B, C, Result) :-
-	[A, B, C, Result] ins 0..1,
-	Result #= B + (-1)*(1-A*(1-C)).
 
 transform_h_1bit(A, B, C, X) :-
 	transform_1bit(xor_3var_1bit_5, A, B, C, X).
