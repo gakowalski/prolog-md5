@@ -5,6 +5,21 @@
 		  if_greater_equal/3
 	      ]).
 
+add_1_sbit(A, B, Sum, Carry) :-
+	Sum #= (-1)*A*B, % xor
+	2*Carry #= A+B + A*B - 1. % and
+
+add_1_sbit_wc(A, B, Carry, Sum, NewCarry) :-
+	Sum #= A*B*Carry,
+	%2*NewCarry #= A+B - Carry*A*B + Carry.
+	2*NewCarry #= A+B - Sum + Carry.
+
+add_sbit([ A ], [ B ], [ Sum ], Carry) :-
+	add_1_sbit(A, B, Sum, Carry).
+add_sbit([ A | AS ], [ B | BS ], [ Sum | SS ], Carry) :-
+	add_sbit(AS, BS, SS, OldCarry),
+	add_1_sbit_wc(A, B, OldCarry, Sum, Carry).
+
 number_to_dword_signed_bits(Number, Bits) :-
 	Number in 0..4294967295,
 	length(Bits, 32),
