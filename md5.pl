@@ -5,6 +5,20 @@
 		  if_greater_equal/3
 	      ]).
 
+/*
+ * Regular bits:
+ * ?- test_benchmark(test_md5).
+test_md5
+% 6,053,001 inferences, 0.563 CPU in 0.565 seconds (99% CPU, 10760891 Lips)
+true .
+
+?- test_benchmark(test_md5_reverse).
+test_md5_reverse
+% 290,421,731 inferences, 35.688 CPU in 35.812 seconds (100% CPU, 8137912 Lips)
+true .
+ *
+ */
+
 % 390 -> 367 mln inf.
 xor_3var_1bit_5(A, B, C, Xor) :-
 	[A, B, C, Xor] ins 0..1,
@@ -23,14 +37,46 @@ number_to_dword_bits(Number, Bits, Overflow) :-
 	     268435456, 536870912, 1073741824, 2147483648],
 	scalar_product(T, [Overflow | Bits], #=, Number).
 
+number_to_dword_signed_bits(Number, Bits, Overflow) :-
+	Number #>= 0,
+	length(Bits, 32),
+	Bits ins -1\/1,
+	Overflow #>= 0,
+	T = [ 0x100000000, % TODO: Check if this is reasonable for reverse md5
+	     1, 2, 4, 8, 16, 32, 64, 128,
+	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
+	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
+	     16777216, 33554432, 67108864, 134217728,
+	     268435456, 536870912, 1073741824, 2147483648],
+	scalar_product(T, [Overflow | Bits], #=, Product),
+	2*Number - (2^32-1) #= Product.
+
+bit_to_signed_bit(Bit, SBit) :-
+	Bit in 0..1,
+	SBit in -1\/1,
+	SBit #= 2*Bit - 1.
+
+bits_to_signed_bits(Bits, SBits) :-
+	maplist(bit_to_signed_bit, Bits, SBits).
+
 % from http://stackoverflow.com/a/28339379/925196
 binary_number(Bs, N) :- var(N) -> foldl(shift, Bs, 0, N) ; bitgen(N, Rs), reverse(Rs, Bs).
 shift(B, C, R) :- R is (C << 1) + B.
 bitgen(N, [B|Bs]) :- B is N /\ 1 , ( N > 1 -> M is N >> 1, bitgen(M, Bs) ; Bs = [] ).
 
 transform_1bit(Trans, AB, BB, CB, X) :-
+	Trans \= xor_1sbit_3vars_0,
 	number_to_dword_bits(X, XB, 0),
 	maplist(Trans, AB, BB, CB, XB).
+
+transform_1bit(Trans, AB, BB, CB, X) :-
+	Trans = xor_1sbit_3vars_0,
+	number_to_dword_signed_bits(X, XB, 0),
+	bits_to_signed_bits(AB, ABS),
+	bits_to_signed_bits(BB, BBS),
+	bits_to_signed_bits(CB, CBS),
+	maplist(Trans, ABS, BBS, CBS, XB).
+
 
 transform_f_1bit(A, B, C, X) :-
 	transform_1bit(f_1bit_1, A, B, C, X).
@@ -48,7 +94,8 @@ i_1bit_0(A, B, C, Result) :-
 	xor_variant_1bit_5(T, B, Result).
 
 transform_h_1bit(A, B, C, X) :-
-	transform_1bit(xor_3var_1bit_5, A, B, C, X).
+	transform_1bit(xor_1sbit_3vars_0, A, B, C, X).
+	%transform_1bit(xor_3var_1bit_5, A, B, C, X).
 
 xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
 xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
@@ -61,6 +108,13 @@ xor_variant_1bit_4(A, B, Xor) :-
 	Xor #= A+B-2*A*B.
 xor_variant_1bit_5(A, B, Xor) :-
 	Xor #= (A-B)^2.
+
+xor_1sbit_0(A, B, Xor) :-
+	Xor #= -1*A*B.
+xor_1sbit_1(A, B, Xor) :-
+	A*Xor #= -1*B.
+xor_1sbit_3vars_0(A, B, C, Xor) :-
+	Xor #= A*B*C.
 
 dword_xor_2bit(A, B, X) :-
 	Limit is (2^32)-1,
