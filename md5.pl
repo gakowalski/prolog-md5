@@ -66,11 +66,13 @@ bitgen(N, [B|Bs]) :- B is N /\ 1 , ( N > 1 -> M is N >> 1, bitgen(M, Bs) ; Bs = 
 
 transform_1bit(Trans, AB, BB, CB, X) :-
 	Trans \= xor_1sbit_3vars_0,
+	Trans \= i_1sbit_0,
+	Trans \= f_1sbit_0,
 	number_to_dword_bits(X, XB, 0),
 	maplist(Trans, AB, BB, CB, XB).
 
 transform_1bit(Trans, AB, BB, CB, X) :-
-	Trans = xor_1sbit_3vars_0,
+	member(Trans, [xor_1sbit_3vars_0, i_1sbit_0, f_1sbit_0]),
 	number_to_dword_signed_bits(X, XB, 0),
 	bits_to_signed_bits(AB, ABS),
 	bits_to_signed_bits(BB, BBS),
@@ -79,19 +81,30 @@ transform_1bit(Trans, AB, BB, CB, X) :-
 
 
 transform_f_1bit(A, B, C, X) :-
-	transform_1bit(f_1bit_1, A, B, C, X).
+	transform_1bit(f_1sbit_0, A, B, C, X).
 
 f_1bit_1(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
 	Result #= A*(B-C) + C.
 
+f_1sbit_0(A, B, C, Result) :-
+	not_1sbit_0(A, NotA),
+	and_1sbit_0(A, B, AAndB),
+	and_1sbit_0(NotA, C, NAAndC),
+	or_1sbit_0(AAndB, NAAndC, Result).
+
 transform_i_1bit(A, B, C, X) :-
-	transform_1bit(i_1bit_0, A, B, C, X).
+	transform_1bit(i_1sbit_0, A, B, C, X).
 
 i_1bit_0(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
 	T #= max(A, 1-C),
 	xor_variant_1bit_5(T, B, Result).
+
+i_1sbit_0(A, B, C, Result) :-
+	not_1sbit_0(C, NotC),
+	or_1sbit_0(A, NotC, Or),
+	xor_1sbit_0(B, Or, Result).
 
 transform_h_1bit(A, B, C, X) :-
 	transform_1bit(xor_1sbit_3vars_0, A, B, C, X).
@@ -109,6 +122,12 @@ xor_variant_1bit_4(A, B, Xor) :-
 xor_variant_1bit_5(A, B, Xor) :-
 	Xor #= (A-B)^2.
 
+not_1sbit_0(A, Not) :-
+	Not #= (-1)*A.
+and_1sbit_0(A, B, And) :-
+	2*And #= A+B + A*B - 1.
+or_1sbit_0(A, B, Or) :-
+	2*Or #= A+B - A*B + 1.
 xor_1sbit_0(A, B, Xor) :-
 	Xor #= -1*A*B.
 xor_1sbit_1(A, B, Xor) :-
