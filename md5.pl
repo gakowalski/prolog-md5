@@ -19,36 +19,20 @@ true .
  *
  */
 
-% 390 -> 367 mln inf.
-xor_3var_1bit_5(A, B, C, Xor) :-
-	[A, B, C, Xor] ins 0..1,
-	Xor #= (A+B+C) mod 2.
-
-number_to_dword_bits(Number, Bits, Overflow) :-
-	Number #>= 0,
-	length(Bits, 32),
-	Bits ins 0..1,
-	Overflow #>= 0,
-	T = [ 0x100000000,
-	     1, 2, 4, 8, 16, 32, 64, 128,
-	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
-	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
-	     16777216, 33554432, 67108864, 134217728,
-	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, [Overflow | Bits], #=, Number).
-
+% TODO: Overflow value is wrong now, it only represent one bit and
+% should more
 number_to_dword_signed_bits(Number, Bits, Overflow) :-
 	Number #>= 0,
 	length(Bits, 32),
 	Bits ins -1\/1,
 	Overflow #>= 0,
-	T = [ 0x100000000, % TODO: Check if this is reasonable for reverse md5
+	T = [ 0x200000000, 0x100000000, % TODO: Check if this is reasonable for reverse md5
 	     1, 2, 4, 8, 16, 32, 64, 128,
 	     256, 512, 1024, 2048, 4096, 8192, 16384, 32768,
 	     65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608,
 	     16777216, 33554432, 67108864, 134217728,
 	     268435456, 536870912, 1073741824, 2147483648],
-	scalar_product(T, [Overflow | Bits], #=, Product),
+	scalar_product(T, [_, Overflow | Bits], #=, Product),
 	2*Number - (2^32-1) #= Product.
 
 bit_to_signed_bit(Bit, SBit) :-
@@ -65,27 +49,11 @@ shift(B, C, R) :- R is (C << 1) + B.
 bitgen(N, [B|Bs]) :- B is N /\ 1 , ( N > 1 -> M is N >> 1, bitgen(M, Bs) ; Bs = [] ).
 
 transform_1bit(Trans, AB, BB, CB, X) :-
-	Trans \= xor_1sbit_3vars_0,
-	Trans \= i_1sbit_0,
-	Trans \= f_1sbit_0,
-	number_to_dword_bits(X, XB, 0),
-	maplist(Trans, AB, BB, CB, XB).
-
-transform_1bit(Trans, AB, BB, CB, X) :-
-	member(Trans, [xor_1sbit_3vars_0, i_1sbit_0, f_1sbit_0]),
 	number_to_dword_signed_bits(X, XB, 0),
-	bits_to_signed_bits(AB, ABS),
-	bits_to_signed_bits(BB, BBS),
-	bits_to_signed_bits(CB, CBS),
-	maplist(Trans, ABS, BBS, CBS, XB).
-
+	maplist(Trans, AB, BB, CB, XB).
 
 transform_f_1bit(A, B, C, X) :-
 	transform_1bit(f_1sbit_0, A, B, C, X).
-
-f_1bit_1(A, B, C, Result) :-
-	[A, B, C, Result] ins 0..1,
-	Result #= A*(B-C) + C.
 
 f_1sbit_0(A, B, C, Result) :-
 	not_1sbit_0(A, NotA),
@@ -96,31 +64,16 @@ f_1sbit_0(A, B, C, Result) :-
 transform_i_1bit(A, B, C, X) :-
 	transform_1bit(i_1sbit_0, A, B, C, X).
 
-i_1bit_0(A, B, C, Result) :-
-	[A, B, C, Result] ins 0..1,
-	T #= max(A, 1-C),
-	xor_variant_1bit_5(T, B, Result).
-
 i_1sbit_0(A, B, C, Result) :-
 	not_1sbit_0(C, NotC),
 	or_1sbit_0(A, NotC, Or),
 	xor_1sbit_0(B, Or, Result).
 
+i_1sbit_1(A, B, C, Result) :-
+	2*Result*B #= C-A - A*C - 1.
+
 transform_h_1bit(A, B, C, X) :-
 	transform_1bit(xor_1sbit_3vars_0, A, B, C, X).
-	%transform_1bit(xor_3var_1bit_5, A, B, C, X).
-
-xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
-xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
-xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
-xor_variant_1bit_3(A, B, Xor) :-
-	[A, B, Xor] ins 0..1,
-	Sum #= A+B,
-	Xor #= Sum*(2-Sum).
-xor_variant_1bit_4(A, B, Xor) :-
-	Xor #= A+B-2*A*B.
-xor_variant_1bit_5(A, B, Xor) :-
-	Xor #= (A-B)^2.
 
 not_1sbit_0(A, Not) :-
 	Not #= (-1)*A.
@@ -134,25 +87,6 @@ xor_1sbit_1(A, B, Xor) :-
 	A*Xor #= -1*B.
 xor_1sbit_3vars_0(A, B, C, Xor) :-
 	Xor #= A*B*C.
-
-dword_xor_2bit(A, B, X) :-
-	Limit is (2^32)-1,
-	[A, B, X] ins 0..Limit,
-	length(AParts, 16),
-	length(BParts, 16),
-	length(XParts, 16),
-	AParts ins 0..3,
-	BParts ins 0..3,
-	XParts ins 0..3,
-	T = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864, 268435456, 1073741824],
-	scalar_product(T, AParts, #=, A),
-	scalar_product(T, BParts, #=, B),
-	scalar_product(T, XParts, #=, X),
-	maplist(xor_variant_2bit_0, AParts, BParts, XParts).
-
-xor_variant_2bit_0(A, B, Xor) :-
-	Xor #= ((A + B*((-1)^A)) mod 4),
-	Xor #= ((B + A*((-1)^B)) mod 4).
 
 test_benchmark(Test) :-
 	print(Test), time(Test).
@@ -287,9 +221,9 @@ md5_transform_states(States, Bytes, New_States) :-
 	O2 #= S2 + T2,
 	O3 #= S3 + T3,
 	O4 #= S4 + T4,
-	number_to_dword_bits(S2, S2B, _),
-	number_to_dword_bits(S3, S3B, _),
-	number_to_dword_bits(S4, S4B, _),
+	number_to_dword_signed_bits(S2, S2B, _),
+	number_to_dword_signed_bits(S3, S3B, _),
+	number_to_dword_signed_bits(S4, S4B, _),
 	md5_transform_states(1, States, [S2B, S3B, S4B], Dwords, Result).
 
 md5_transform_states(65, States, _,  _, States).
@@ -325,7 +259,7 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	%Result #= B + ((2^32)*Sum + Sum mod 2^32) // 2^(32-S), % rotate left S times
 	Result #= B + (2^S)*Sum + (Sum mod 2^32) // 2^(32-S), % rotate left S times
 
-	number_to_dword_bits(Result, RB, _),
+	number_to_dword_signed_bits(Result, RB, _),
 
 	Next_Round is Round + 1,
 	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States).
