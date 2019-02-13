@@ -19,6 +19,14 @@ add_sbit([ A ], [ B ], [ Sum ], Carry) :-
 add_sbit([ A | AS ], [ B | BS ], [ Sum | SS ], Carry) :-
 	add_sbit(AS, BS, SS, OldCarry),
 	add_1_sbit_wc(A, B, OldCarry, Sum, Carry).
+add_rev_sbit(A, B, S, C) :-
+	length(A, L),
+	length(B, L),
+	length(S, L),
+	maplist(domain(sbit_list), [A,B,S]),
+	domain(sbit, C),
+	maplist(reverse, [A,B,S], [AR, BR, SR]),
+	add_sbit(AR, BR, SR, C).
 
 number_to_dword_signed_bits(Number, Bits) :-
 	Number in 0..4294967295,
@@ -232,7 +240,6 @@ md5_transform_states(States, Bytes, New_States) :-
 md5_transform_states(65, States, _,  _, States).
 
 md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
-	Result #> 0,
 	maplist(domain(dword), Dwords),
 	domain(dword, X),
 	domain(states, [A, B, C, D]),
@@ -246,26 +253,19 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	element(New_Index, Dwords, X),
 
 	md5_transform(Trans, BB, CB, DB, FB),
-	number_to_dword_signed_bits(F, FB),
+	number_to_dword_signed_bits(AC, ACB),
+	number_to_dword_signed_bits(X, XB),
+	number_to_dword_signed_bits(A, AB),
+	add_rev_sbit(FB, ACB, Tmp1, _),
+	add_rev_sbit(AB, XB, Tmp2, _),
+	add_rev_sbit(Tmp1, Tmp2, SumB, _),
 
-	Sum #= A + F + X + AC,
-
-	%Result #= B + Sum * 2^S + (Sum // 2^(32-S)) mod (2^S), % rotate left S times
-	%Result #= B + Sum * 2^S + Sum // 2^(32-S) - (2^S)*((Sum // 2^(32-S))//(2^S)), % rotate left S times
-	%Result #= B + Sum * 2^S + Sum // 2^(32-S) - (2^S)*(Sum // 2^32), % rotate left S times
-	%Result #= B + (2^S)*(Sum - Sum // 2^32) + Sum // 2^(32-S), % rotate left S times
-	%Result #= (B*2^(32-S) + (2^S)*(Sum - Sum// 2^32)*(2^(32-S)) + Sum) // 2^(32-S), % rotate left S times
-	%Result #= (B*2^(32-S) + (2^32)*(Sum - Sum// 2^32) + Sum) // 2^(32-S), % rotate left S times
-	%Result #= B + ((2^32+1)*Sum - (2^32)*(Sum//2^32)) // 2^(32-S), % rotate left S times
-	%Result #= B + ((2^32+1)*Sum - (Sum - (Sum mod 2^32))) // 2^(32-S), % rotate left S times
-	%Result #= B + ((2^32)*Sum + Sum mod 2^32) // 2^(32-S), % rotate left S times
-	Result #= B + (2^S)*Sum + (Sum mod 2^32) // 2^(32-S), % rotate left S times
-
-	ResDw #= Result mod 0x100000000,
+	dword_rotate_left(S, SumBRotated, SumB),
+	add_rev_sbit(SumBRotated, BB, RB, _),
 	number_to_dword_signed_bits(ResDw, RB),
 
 	Next_Round is Round + 1,
-	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States).
+	md5_transform_states(Next_Round, [ D, ResDw, B, C ], [RB, BB, CB],  Dwords, New_States).
 
 % Prawdziwa relacja!
 
@@ -322,7 +322,6 @@ demo_md5 :-
 	md5(Codes, Digest),
 	write('MD5 hash: '),
 	labeling([bisect], Digest),
-	%maplist(format('~16r'), Digest).
 	maplist(demo_md5_print_digest, Digest).
 
 demo_md5_print_digest(Digest) :-
