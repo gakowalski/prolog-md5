@@ -301,13 +301,23 @@ byte_copy([ B | Buffer ], Start, Data, DataLen, [ NB | NewBuffer ], Counter) :-
 	byte_copy(Buffer, Start, Data, DataLen, NewBuffer, NewCounter).
 
 demo_md5 :-
-	print('Type text to be hashed: '),
+	write('Type text to be hashed: '),
 	current_input(Stream),
 	read_line_to_codes(Stream, Codes),
 	md5(Codes, Digest),
-	print('MD5 hash: '),
+	write('MD5 hash: '),
 	labeling([bisect], Digest),
-	maplist(format('~16r'), Digest).
+	%maplist(format('~16r'), Digest).
+	maplist(demo_md5_print_digest, Digest).
+
+demo_md5_print_digest(Digest) :-
+	format(atom(A), '~16r', Digest),
+	string_to_list(A, [B,C,D,E,F,G,H,I]),
+	reverse([[B,C],[D,E],[F,G],[H,I]], L2),
+	flatten(L2, L3),
+	string_to_list(Rev, L3),
+	write(Rev).
+
 test_md5 :-
 	md5(`TEST`, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
 test_md5_reverse :-
