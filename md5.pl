@@ -55,7 +55,7 @@ shift(B, C, R) :- R is (C << 1) + B.
 bitgen(N, [B|Bs]) :- B is N /\ 1 , ( N > 1 -> M is N >> 1, bitgen(M, Bs) ; Bs = [] ).
 
 transform_f_1bit(A, B, C, X) :-
-	maplist(f_1sbit_0, A, B, C, X).
+	maplist(f_1sbit_1, A, B, C, X).
 
 f_1sbit_0(A, B, C, Result) :-
 	not_1sbit_0(A, NotA),
@@ -63,8 +63,19 @@ f_1sbit_0(A, B, C, Result) :-
 	and_1sbit_0(NotA, C, NAAndC),
 	or_1sbit_0(AAndB, NAAndC, Result).
 
+transform_g_1bit(A, B, C, X) :-
+	maplist(g_1sbit_1, A, B, C, X).
+
+f_1sbit_1(A, B, C, Result) :-
+	2*Result #= B + A*B + C - A*C.
+
+g_1sbit_1(A, B, C, Result) :-
+	%2*Result #= B + A*B + C - A*C.
+	2*Result #= A + A*C + B - B*C.
+
+
 transform_i_1bit(A, B, C, X) :-
-	maplist(i_1sbit_0, A, B, C, X).
+	maplist(i_1sbit_2, A, B, C, X).
 
 i_1sbit_0(A, B, C, Result) :-
 	not_1sbit_0(C, NotC),
@@ -73,6 +84,9 @@ i_1sbit_0(A, B, C, Result) :-
 
 i_1sbit_1(A, B, C, Result) :-
 	2*Result*B #= C-A - A*C - 1.
+
+i_1sbit_2(A, B, C, Result) :-
+	2*Result #= B*C-A*B - A*B*C - B.
 
 transform_h_1bit(A, B, C, X) :-
 	maplist(xor_1sbit_3vars_0, A, B, C, X).
@@ -190,7 +204,8 @@ md5_final(States, Buffer, Length, Digest) :-
 	md5_update(NewStates, Digest, NewBuffer, _, Bits, 8, New_Length). %true rel
 
 md5_transform(f, X, Y, Z, Result) :- transform_f_1bit(X, Y, Z, Result).
-md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
+%md5_transform(g, X, Y, Z, Result) :- transform_f_1bit(Z, X, Y, Result).
+md5_transform(g, X, Y, Z, Result) :- transform_g_1bit(X, Y, Z, Result).
 md5_transform(h, X, Y, Z, Result) :- transform_h_1bit(Z, X, Y, Result).
 md5_transform(i, X, Y, Z, Result) :- transform_i_1bit(X, Y, Z, Result).
 
@@ -259,6 +274,15 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	add_rev_sbit(FB, ACB, Tmp1, _),
 	add_rev_sbit(AB, XB, Tmp2, _),
 	add_rev_sbit(Tmp1, Tmp2, SumB, _),
+
+	% optional constraint
+	FB = [F0 | _],
+	ACB = [ACB0 | _],
+	AB = [AB0 | _ ],
+	XB = [XB0 | _ ],
+	SumB = [SumB0 | _ ],
+	SumB0 #= (-1)*F0*ACB0*AB0*XB0,
+	% /optional
 
 	dword_rotate_left(S, SumBRotated, SumB),
 	add_rev_sbit(SumBRotated, BB, RB, _),
