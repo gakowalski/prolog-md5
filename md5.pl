@@ -5,11 +5,6 @@
 		  if_greater_equal/3
 	      ]).
 
-% 390 -> 367 mln inf.
-xor_3var_1bit_5(A, B, C, Xor) :-
-	[A, B, C, Xor] ins 0..1,
-	Xor #= (A+B+C) mod 2.
-
 number_to_dword_bits(Number, Bits, Overflow) :-
 	Number #>= 0,
 	length(Bits, 32),
@@ -33,53 +28,27 @@ transform_1bit(Trans, AB, BB, CB, X) :-
 	maplist(Trans, AB, BB, CB, XB).
 
 transform_f_1bit(A, B, C, X) :-
-	transform_1bit(f_1bit_1, A, B, C, X).
-
-f_1bit_1(A, B, C, Result) :-
-	[A, B, C, Result] ins 0..1,
-	Result #= A*(B-C) + C.
+	number_to_dword_bits(AN, A, 0),
+	number_to_dword_bits(BN, B, 0),
+	number_to_dword_bits(CN, C, 0),
+	X #= (AN /\ BN) \/ (\AN /\ CN).
 
 transform_i_1bit(A, B, C, X) :-
-	transform_1bit(i_1bit_0, A, B, C, X).
+	number_to_dword_bits(AN, A, 0),
+	number_to_dword_bits(BN, B, 0),
+	number_to_dword_bits(CN, C, 0),
+	%transform_1bit(i_1bit_0, A, B, C, X).
+	X #= BN xor (AN \/ (\CN /\ 0xffffffff)).
 
 i_1bit_0(A, B, C, Result) :-
 	[A, B, C, Result] ins 0..1,
-	T #= max(A, 1-C),
-	xor_variant_1bit_5(T, B, Result).
+	Result #= B xor (A \/ (\C /\ 1)).
 
 transform_h_1bit(A, B, C, X) :-
-	transform_1bit(xor_3var_1bit_5, A, B, C, X).
-
-xor_variant_1bit_0(A, B, Xor) :- Xor #= abs(A-B).
-xor_variant_1bit_1(A, B, Xor) :- Xor #= (A+B)*(2-A-B).
-xor_variant_1bit_2(A, B, Xor) :- Xor #= 2*(A+B)-(A+B)^2.
-xor_variant_1bit_3(A, B, Xor) :-
-	[A, B, Xor] ins 0..1,
-	Sum #= A+B,
-	Xor #= Sum*(2-Sum).
-xor_variant_1bit_4(A, B, Xor) :-
-	Xor #= A+B-2*A*B.
-xor_variant_1bit_5(A, B, Xor) :-
-	Xor #= (A-B)^2.
-
-dword_xor_2bit(A, B, X) :-
-	Limit is (2^32)-1,
-	[A, B, X] ins 0..Limit,
-	length(AParts, 16),
-	length(BParts, 16),
-	length(XParts, 16),
-	AParts ins 0..3,
-	BParts ins 0..3,
-	XParts ins 0..3,
-	T = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864, 268435456, 1073741824],
-	scalar_product(T, AParts, #=, A),
-	scalar_product(T, BParts, #=, B),
-	scalar_product(T, XParts, #=, X),
-	maplist(xor_variant_2bit_0, AParts, BParts, XParts).
-
-xor_variant_2bit_0(A, B, Xor) :-
-	Xor #= ((A + B*((-1)^A)) mod 4),
-	Xor #= ((B + A*((-1)^B)) mod 4).
+	number_to_dword_bits(AN, A, 0),
+	number_to_dword_bits(BN, B, 0),
+	number_to_dword_bits(CN, C, 0),
+	X #= AN xor BN xor CN.
 
 test_benchmark(Test) :-
 	print(Test), time(Test).
@@ -189,20 +158,6 @@ md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
         %scalar_product([16777216,65536,256,1],[D0,D1,D2,D3],#=,Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
 
-divide_list(C, List, Left, Right) :-
-	append([Left, Right], List),
-	length(Left, C).
-
-dword_rotate_left(C, Input, Output) :-
-	(   nonvar(Input)
-	->
-	divide_list(C, Input, Left, Right),
-	append(Right, Left, Output)
-	;
-	D is 32 - C,
-	divide_list(D, Output, Left, Right),
-	append(Right, Left, Input)).
-
 md5_transform_states(States, Bytes, New_States) :-
 	maplist(domain(states), [States, New_States]),
 	domain(buffer, Bytes),
@@ -241,16 +196,9 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 
 	Sum #= A + F + X + AC,
 
-	%Result #= B + Sum * 2^S + (Sum // 2^(32-S)) mod (2^S), % rotate left S times
-	%Result #= B + Sum * 2^S + Sum // 2^(32-S) - (2^S)*((Sum // 2^(32-S))//(2^S)), % rotate left S times
-	%Result #= B + Sum * 2^S + Sum // 2^(32-S) - (2^S)*(Sum // 2^32), % rotate left S times
-	%Result #= B + (2^S)*(Sum - Sum // 2^32) + Sum // 2^(32-S), % rotate left S times
-	%Result #= (B*2^(32-S) + (2^S)*(Sum - Sum// 2^32)*(2^(32-S)) + Sum) // 2^(32-S), % rotate left S times
-	%Result #= (B*2^(32-S) + (2^32)*(Sum - Sum// 2^32) + Sum) // 2^(32-S), % rotate left S times
-	%Result #= B + ((2^32+1)*Sum - (2^32)*(Sum//2^32)) // 2^(32-S), % rotate left S times
-	%Result #= B + ((2^32+1)*Sum - (Sum - (Sum mod 2^32))) // 2^(32-S), % rotate left S times
-	%Result #= B + ((2^32)*Sum + Sum mod 2^32) // 2^(32-S), % rotate left S times
-	Result #= B + (2^S)*Sum + (Sum mod 2^32) // 2^(32-S), % rotate left S times
+	%Result #= B + (2^S)*Sum + (Sum mod 2^32) // 2^(32-S), % rotate left S times
+	%Result #= B + (Sum << S) + (Sum mod 2^32) >> (32 - S),
+	Result #= B + (Sum << S) + (Sum mod 2^32) >> (32 - S),
 
 	number_to_dword_bits(Result, RB, _),
 
