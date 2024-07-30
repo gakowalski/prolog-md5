@@ -70,7 +70,7 @@ md5(MsgStr, Digest) :-
 	States = [ 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 ],
 	domain(buffer, Buffer),
 	domain(buffer, NewBuffer),
-	domain(states, NewStates),
+	domain(digest, NewStates),
 	maplist(=(0), Buffer),
 
 	% domain declarations
@@ -93,17 +93,18 @@ md5(MsgStr, Digest) :-
 	md5_final(NewStates, NewBuffer, Length, [D1, D2, D3, D4]),
 
 	% truncate output to dword values
-	O1 #= D1 mod 0x100000000,
-	O2 #= D2 mod 0x100000000,
-	O3 #= D3 mod 0x100000000,
-	O4 #= D4 mod 0x100000000,
+	O1 #= D1 /\ 0xffffffff,
+	O2 #= D2 /\ 0xffffffff,
+	O3 #= D3 /\ 0xffffffff,
+	O4 #= D4 /\ 0xffffffff,
 
 	% final hash values
 	Digest = [O1, O2, O3, O4]. % true rel
 
 md5_final(States, Buffer, Length, Digest) :-
 	% domain declarations
-	maplist(domain(states), [States, Digest]),
+	domain(states, States),
+	domain(states, Digest),
 	domain(buffer, Buffer),
 	PadLen in 1..64,
 	Index in 0..63,
@@ -114,8 +115,8 @@ md5_final(States, Buffer, Length, Digest) :-
 	maplist(=(0), Padding),
 
 	% equations
-	HighBitCount #= Length // 16,
-	LowBitCount #= (Length mod 16) * 8,
+	HighBitCount #= Length >> 4,
+	LowBitCount #= (Length /\ 0xf) << 3,
 
 	Bits = [LowBitCount,HighBitCount,0,0,0,0,0,0],
 	Index #= Length mod 64,
@@ -137,7 +138,6 @@ md5_bytes_to_dwords([D3,D2,D1,D0 | Bytes], [Dword | Dwords]) :-
 	maplist(domain(byte), [D0, D1, D2, D3]),
 	%domain(dword, Dword),
 	Dword #= 16777216*D0 + 65536*D1 + 256*D2 + D3,
-        %scalar_product([16777216,65536,256,1],[D0,D1,D2,D3],#=,Dword),
 	md5_bytes_to_dwords(Bytes, Dwords).
 
 md5_transform_states(States, Bytes, New_States) :-
@@ -151,22 +151,17 @@ md5_transform_states(States, Bytes, New_States) :-
 	O2 #= S2 + T2,
 	O3 #= S3 + T3,
 	O4 #= S4 + T4,
-	number_to_dword_bits(S2, S2B, _),
-	number_to_dword_bits(S3, S3B, _),
-	number_to_dword_bits(S4, S4B, _),
-	md5_transform_states(1, States, [S2B, S3B, S4B], Dwords, Result).
+	md5_transform_states(1, States, Dwords, Result).
 
-md5_transform_states(65, States, _,  _, States).
+md5_transform_states(65, States, _, States).
 
-md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
+md5_transform_states(Round, [ A, B, C, D ], Dwords, New_States) :-
+	Round in 1..64,
 	Result #> 0,
 	maplist(domain(dword), Dwords),
 	domain(dword, X),
 	domain(states, [A, B, C, D]),
 	domain(states, New_States),
-	BB ins 0..1,
-	CB ins 0..1,
-	DB ins 0..1,
 
 	md5_round_constant(Round, Trans, Rotation, AC, Index),
 	md5_rotate_constant(Rotation, S),
@@ -177,15 +172,10 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	md5_transform(Trans, B, C, D, F),
 
 	Sum #= A + F + X + AC,
-
-	%Result #= B + (2^S)*Sum + (Sum mod 2^32) // 2^(32-S), % rotate left S times
-	%Result #= B + (Sum << S) + (Sum mod 2^32) >> (32 - S),
-	Result #= B + (Sum << S) + (Sum mod 2^32) >> (32 - S),
-
-	number_to_dword_bits(Result, RB, _),
+	Result #= B + (Sum << S) + (Sum /\ 0xffffffff) >> (32 - S), % rotate left
 
 	Next_Round is Round + 1,
-	md5_transform_states(Next_Round, [ D, Result, B, C ], [RB, BB, CB],  Dwords, New_States).
+	md5_transform_states(Next_Round, [ D, Result, B, C ], Dwords, New_States).
 
 % Prawdziwa relacja!
 
@@ -250,6 +240,8 @@ test_md5_reverse :-
 	Word = [84, 69, 83, 84].
 	%labeling([bisect], [X]),
 	%print(X), nl.
+test_md5_clpfd(Word) :-
+	md5(Word, [0x4bd93b03, 0xe4d76811, 0xc344d6f0, 0xbf355ec9]).
 test_md5_reverse_true :-
 	length(Word, Len),
 	Len < 16,
