@@ -23,32 +23,14 @@ binary_number(Bs, N) :- var(N) -> foldl(shift, Bs, 0, N) ; bitgen(N, Rs), revers
 shift(B, C, R) :- R is (C << 1) + B.
 bitgen(N, [B|Bs]) :- B is N /\ 1 , ( N > 1 -> M is N >> 1, bitgen(M, Bs) ; Bs = [] ).
 
-transform_1bit(Trans, AB, BB, CB, X) :-
-	number_to_dword_bits(X, XB, 0),
-	maplist(Trans, AB, BB, CB, XB).
-
 transform_f_1bit(A, B, C, X) :-
-	number_to_dword_bits(AN, A, 0),
-	number_to_dword_bits(BN, B, 0),
-	number_to_dword_bits(CN, C, 0),
-	X #= (AN /\ BN) \/ (\AN /\ CN).
+	X #= (A /\ B) \/ (\A /\ (C /\ 0xffffffff)).
 
 transform_i_1bit(A, B, C, X) :-
-	number_to_dword_bits(AN, A, 0),
-	number_to_dword_bits(BN, B, 0),
-	number_to_dword_bits(CN, C, 0),
-	%transform_1bit(i_1bit_0, A, B, C, X).
-	X #= BN xor (AN \/ (\CN /\ 0xffffffff)).
-
-i_1bit_0(A, B, C, Result) :-
-	[A, B, C, Result] ins 0..1,
-	Result #= B xor (A \/ (\C /\ 1)).
+	X #= B xor (A \/ (\C /\ 0xffffffff)).
 
 transform_h_1bit(A, B, C, X) :-
-	number_to_dword_bits(AN, A, 0),
-	number_to_dword_bits(BN, B, 0),
-	number_to_dword_bits(CN, C, 0),
-	X #= AN xor BN xor CN.
+	X #= A xor B xor C.
 
 test_benchmark(Test) :-
 	print(Test), time(Test).
@@ -192,7 +174,7 @@ md5_transform_states(Round, [ A, B, C, D ], [BB, CB, DB], Dwords, New_States) :-
 	New_Index is Index + 1,
 	element(New_Index, Dwords, X),
 
-	md5_transform(Trans, BB, CB, DB, F),
+	md5_transform(Trans, B, C, D, F),
 
 	Sum #= A + F + X + AC,
 
